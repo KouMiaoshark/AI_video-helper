@@ -1,0 +1,29 @@
+{
+  "providers": {
+    "bltcy": {
+      "type": "bltcy",
+      "api_key": "YOUR_API_KEY_HERE",
+      "base_url": "https://api.bltcy.ai/v1",
+      "default_model": "nano-banana-pro"
+    },
+    "siliconflow": {
+      "type": "openai_compatible",
+      "api_key": "YOUR_API_KEY_HERE",
+      "base_url": "https://api.siliconflow.cn/v1",
+      "default_model": "stabilityai/stable-diffusion-xl-base-1.0"
+    },
+    "deepseek": {
+      "type": "openai_compatible",
+      "api_key": "YOUR_API_KEY_HERE",
+      "base_url": "https://api.deepseek.com",
+      "default_model": "deepseek-chat"
+    }
+  },
+  "defaults": {
+    "image": "bltcy",
+    "script": "deepseek",
+    "enhance": "siliconflow",
+    "video": "siliconflow",
+    "audio": "siliconflow"
+  }
+}

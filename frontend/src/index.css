@@ -1,0 +1,123 @@
+@import "tailwindcss";
+
+:root {
+  --bg-primary: #0a0a12;
+  --bg-card: #13131f;
+  --bg-card-hover: #181828;
+  --bg-secondary: #1a1a2e;
+  --bg-tertiary: #24243a;
+  --text-primary: #e8e8f0;
+  --text-secondary: #9898b0;
+  --text-muted: rgba(255,255,255,0.35);
+  --text-dim: rgba(255,255,255,0.15);
+  --accent: #7c5cfc;
+  --accent-hover: #9478ff;
+  --border: rgba(255,255,255,0.06);
+  --border-hover: rgba(255,255,255,0.12);
+  --success: #34d399;
+  --warning: #fbbf24;
+  --danger: #f87171;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  overflow: hidden;
+}
+
+/* React Flow 自定义样式 */
+.react-flow__background {
+  background: var(--bg-primary) !important;
+}
+
+.react-flow__minimap {
+  background: var(--bg-secondary) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 8px !important;
+}
+
+.react-flow__controls {
+  background: var(--bg-secondary) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 8px !important;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.3) !important;
+}
+
+.react-flow__controls-button {
+  background: var(--bg-tertiary) !important;
+  border-color: var(--border) !important;
+  fill: var(--text-secondary) !important;
+}
+
+.react-flow__controls-button:hover {
+  background: var(--accent) !important;
+  fill: white !important;
+}
+
+.react-flow__edge-path {
+  stroke: var(--accent) !important;
+  stroke-width: 2 !important;
+}
+
+.react-flow__handle {
+  width: 10px !important;
+  height: 10px !important;
+  background: var(--accent) !important;
+  border: 2px solid var(--bg-primary) !important;
+  transition: box-shadow 0.15s ease !important;
+}
+
+.react-flow__handle:hover {
+  background: var(--accent-hover) !important;
+  box-shadow: 0 0 8px var(--accent-hover), 0 0 16px rgba(148, 120, 255, 0.3) !important;
+}
+
+/* 海螺页面动画 */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.3s ease-out;
+}
+
+/* 滚动条美化 */
+::-webkit-scrollbar {
+  width: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.06);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255,255,255,0.1);
+}
+
+/* 下拉框修复：选项深色文字 */
+select {
+  color: #e8e8f0 !important;
+  background-color: rgba(255,255,255,0.04) !important;
+}
+select option {
+  color: #e8e8f0 !important;
+  background-color: #1a1a2e !important;
+}
+select option:checked,
+select option:hover {
+  background-color: #7c5cfc !important;
+  color: white !important;
+}
