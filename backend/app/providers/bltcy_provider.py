@@ -264,6 +264,7 @@ class BltcyProvider(BaseProvider):
                 multipart_fields = [
                     ("model", (None, model)),
                     ("prompt", (None, req.prompt)),
+                    ("n", (None, str(req.num_images))),
                     ("response_format", (None, "url")),
                 ]
                 if aspect:
@@ -311,6 +312,7 @@ class BltcyProvider(BaseProvider):
                 body = {
                     "model": model,
                     "prompt": req.prompt,
+                    "n": req.num_images,
                     "response_format": "url",
                 }
                 if aspect:

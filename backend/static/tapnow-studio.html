@@ -1950,6 +1950,9 @@ You must design a visual composition that tells the story through **8 distinct p
             const [isChatSending, setIsChatSending] = useState(false);
 
             const [lightboxItem, setLightboxItem] = useState(null);
+            const [assetPickerNodeId, setAssetPickerNodeId] = useState(null);
+            const [assetPickerItems, setAssetPickerItems] = useState([]);
+            const [assetPickerLoading, setAssetPickerLoading] = useState(false);
 
             const [promptLibrary, setPromptLibrary] = useState(() => {
                 try {
@@ -7239,11 +7242,12 @@ You must design a visual composition that tells the story through **8 distinct p
                         // 🚀 Banana 模型走后端代理（复用 bltcy_provider.py 已验证的逻辑，避免前端直连格式问题）
                         if (isAnyBanana) {
                             try {
+                                const genCount = node?.settings?.count || 1;
                                 const proxyBody = {
                                     prompt: prompt || '',
                                     model: config?.modelName || modelId,
                                     width: w, height: h,
-                                    num_images: 1,
+                                    num_images: genCount,
                                     image_size: imageSizeFlag || undefined,
                                     aspect_ratio: (aspect && aspect !== 'Auto') ? aspect : undefined,
                                 };
@@ -7288,6 +7292,14 @@ You must design a visual composition that tells the story through **8 distinct p
                                     }
                                     return hItem;
                                 }));
+                                // 同步到资产页面
+                                proxyImages.forEach((imgUrl) => {
+                                    fetch('/api/save-image', {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({ image_url: imgUrl, prompt: prompt || '', model: config?.modelName || modelId }),
+                                    }).catch(() => {});
+                                });
                                 return;
                             } catch (proxyErr) {
                                 throw new Error(`Banana 后端代理失败: ${proxyErr.message}`);
@@ -7335,7 +7347,7 @@ You must design a visual composition that tells the story through **8 distinct p
                             const formData = new FormData();
                             formData.append('model', config?.modelName || 'nano-banana');
                             formData.append('prompt', prompt || 'enhance');
-                            formData.append('n', '1');
+                            formData.append('n', String(node?.settings?.count || 1));
                             formData.append('size', sizeStr);
                             if (aspect) formData.append('aspect_ratio', aspect);
                             if (imageSizeFlag) formData.append('image_size', imageSizeFlag);
@@ -7401,7 +7413,7 @@ You must design a visual composition that tells the story through **8 distinct p
                                 formData.append('model', config?.modelName || 'gpt-image-1.5');
                                 
                                 // 可选参数：n（生成图片数量）
-                                formData.append('n', '1');
+                                formData.append('n', String(node?.settings?.count || 1));
                                 
                                 // 可选参数：response_format
                                 formData.append('response_format', 'url');
@@ -7478,7 +7490,7 @@ You must design a visual composition that tells the story through **8 distinct p
                                 const formData = new FormData();
                                 formData.append('model', config?.modelName || 'gpt-4o-image');
                                 formData.append('prompt', prompt || '');
-                                formData.append('n', '1');
+                                formData.append('n', String(node?.settings?.count || 1));
                                 formData.append('response_format', 'url');
                                 
                                 // size 参数（按照 gpt-image-1.5 格式）
@@ -7911,6 +7923,14 @@ You must design a visual composition that tells the story through **8 distinct p
                                 }
                                 return hItem;
                             }));
+                            // 同步到资产页面
+                            proImages.forEach((imgUrl) => {
+                                fetch('/api/save-image', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ image_url: imgUrl, prompt: prompt || '', model: config?.modelName || modelId }),
+                                }).catch(() => {});
+                            });
                             return;
                         }
                         
@@ -7984,6 +8004,14 @@ You must design a visual composition that tells the story through **8 distinct p
                                 return hItem;
                             });
                             return updated;
+                        });
+                        // 同步到资产页面
+                        imageUrls.forEach((imgUrl) => {
+                            fetch('/api/save-image', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ image_url: imgUrl, prompt: prompt || '', model: config?.modelName || modelId }),
+                            }).catch(() => {});
                         });
                         return;
                     }
@@ -14376,6 +14404,22 @@ You must design a visual composition that tells the story through **8 distinct p
                                                                 >
                                                                     + 添加参考图
                                                                 </button>
+                                                                <button
+                                                                    className="text-[10px] text-emerald-500 hover:text-emerald-700"
+                                                                    type="button"
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        setAssetPickerNodeId(node.id);
+                                                                        setAssetPickerLoading(true);
+                                                                        fetch('/api/assets').then(r => r.json()).then(data => {
+                                                                            const items = (data.assets || []).filter(a => a.type === 'image');
+                                                                            setAssetPickerItems(items);
+                                                                        }).catch(() => setAssetPickerItems([])).finally(() => setAssetPickerLoading(false));
+                                                                    }}
+                                                                    onMouseDown={(e) => e.stopPropagation()}
+                                                                >
+                                                                    📁 从资产选择
+                                                                </button>
                                                                 <input
                                                                     id={`ref-upload-${node.id}`}
                                                                     type="file"
@@ -15716,7 +15760,7 @@ You must design a visual composition that tells the story through **8 distinct p
                                                             {imageUrls.map((url, idx) => (
                                                                 <div 
                                                                     key={idx} 
-                                                                    className={`relative aspect-square bg-black rounded-lg overflow-hidden cursor-pointer transition-all ${
+                                                                    className={`relative min-h-[80px] bg-black rounded-lg overflow-hidden cursor-pointer transition-all ${
                                                                         selectedImageIndex === idx
                                                                             ? 'ring-2 ring-blue-500 ring-offset-2'
                                                                             : 'hover:ring-1 hover:ring-zinc-400'
@@ -15762,7 +15806,7 @@ You must design a visual composition that tells the story through **8 distinct p
                                                         </div>
                                                     ) : (
                                                         <div 
-                                                            className="relative w-full aspect-video bg-black rounded-lg overflow-hidden cursor-pointer"
+                                                            className="relative w-full min-h-[120px] bg-black rounded-lg overflow-hidden cursor-pointer"
                                                             onDoubleClick={(e) => {
                                                                 e.preventDefault();
                                                                 e.stopPropagation();
@@ -18475,6 +18519,50 @@ You must design a visual composition that tells the story through **8 distinct p
                                                         );
                                                     })()}
                                                 </div>
+
+                                                {/* 数量选择器（gen-image） */}
+                                                {node.type === 'gen-image' && (
+                                                    <div className="relative">
+                                                        <button
+                                                            onClick={e => { e.stopPropagation(); setActiveDropdown(activeDropdown?.type === 'count' && activeDropdown.nodeId === node.id ? null : { nodeId: node.id, type: 'count' }); }}
+                                                            className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] border ${
+                                                                theme === 'dark'
+                                                                    ? 'bg-zinc-800/50 hover:bg-zinc-800 text-zinc-400 border-zinc-700/50'
+                                                                    : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-600 border-zinc-300'
+                                                            }`}
+                                                        >
+                                                            {node.settings?.count || 1}张
+                                                        </button>
+                                                        {activeDropdown?.nodeId === node.id && activeDropdown.type === 'count' && (
+                                                            <div
+                                                                className={`absolute bottom-full right-0 mb-1 w-16 rounded-lg shadow-xl p-1 z-[60] border ${
+                                                                    theme === 'dark'
+                                                                        ? 'bg-[#18181b] border-zinc-700'
+                                                                        : 'bg-white border-zinc-200'
+                                                                }`}
+                                                                onMouseDown={e => e.stopPropagation()}
+                                                            >
+                                                                {[1,2,3,4,5,6,7,8].map(n => (
+                                                                    <button
+                                                                        key={n}
+                                                                        onClick={() => {
+                                                                            updateNodeSettings(node.id, { count: n });
+                                                                            setActiveDropdown(null);
+                                                                        }}
+                                                                        className={`w-full text-center py-1 text-[10px] rounded ${
+                                                                            theme === 'dark'
+                                                                                ? (node.settings?.count || 1) === n ? 'text-purple-400 bg-purple-500/10' : 'text-zinc-300 hover:bg-zinc-800'
+                                                                                : (node.settings?.count || 1) === n ? 'text-purple-600 bg-purple-100' : 'text-zinc-700 hover:bg-zinc-100'
+                                                                        }`}
+                                                                    >
+                                                                        {n}张
+                                                                    </button>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )}
+
                                             ) : (
                                                 (() => {
                                                     const currentModel = apiConfigsMap.get(node.settings?.model);
@@ -20617,6 +20705,47 @@ You must design a visual composition that tells the story through **8 distinct p
                             </Modal>
                         </div>
 
+                        {/* 资产选择器弹窗 */}
+                        {assetPickerNodeId && (
+                            <div className="fixed inset-0 z-50 flex items-center justify-center">
+                                <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setAssetPickerNodeId(null)} />
+                                <div className={`relative w-[600px] max-w-[90vw] max-h-[70vh] rounded-xl shadow-2xl border overflow-hidden flex flex-col ${
+                                    theme === 'dark' ? 'bg-[#18181b] border-zinc-700' : 'bg-white border-zinc-200'
+                                }`}>
+                                    <div className={`flex items-center justify-between px-4 py-3 border-b shrink-0 ${theme === 'dark' ? 'border-zinc-800' : 'border-zinc-200'}`}>
+                                        <span className={`text-sm font-semibold ${theme === 'dark' ? 'text-zinc-200' : 'text-zinc-800'}`}>从资产选择参考图</span>
+                                        <button onClick={() => setAssetPickerNodeId(null)} className={`text-zinc-400 hover:text-zinc-200`}>✕</button>
+                                    </div>
+                                    <div className="flex-1 overflow-y-auto custom-scrollbar p-3">
+                                        {assetPickerLoading ? (
+                                            <div className="flex items-center justify-center py-10 text-zinc-500 text-sm">加载中...</div>
+                                        ) : assetPickerItems.length === 0 ? (
+                                            <div className="flex items-center justify-center py-10 text-zinc-500 text-sm">暂无图片资产</div>
+                                        ) : (
+                                            <div className="grid grid-cols-4 gap-2">
+                                                {assetPickerItems.map((item, idx) => (
+                                                    <div key={idx}
+                                                        className={`relative aspect-square rounded-lg overflow-hidden cursor-pointer border-2 transition-all hover:border-blue-500/50 ${
+                                                            theme === 'dark' ? 'border-zinc-700 bg-zinc-900' : 'border-zinc-200 bg-zinc-100'
+                                                        }`}
+                                                        onClick={() => {
+                                                            const currentImages = nodesMap.get(assetPickerNodeId)?.settings?.referenceImages || [];
+                                                            if (currentImages.length >= 4) return;
+                                                            const imgUrl = `/api/assets/${item.filename}`;
+                                                            updateNodeSettings(assetPickerNodeId, { referenceImages: [...currentImages, imgUrl] });
+                                                            setAssetPickerNodeId(null);
+                                                        }}
+                                                    >
+                                                        <img src={`/api/assets/${item.filename}`} className="w-full h-full object-cover" alt={item.filename} />
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
                         {/* 批量素材管理模态框 */}
                         {batchModalOpen && (
                             <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -21080,7 +21209,7 @@ You must design a visual composition that tells the story through **8 distinct p
                                                                                 >
                                                                                     <img
                                                                                         src={localImgUrl}
-                                                                                        className="w-full h-full object-cover"
+                                                                                        className="w-full h-full object-contain bg-black"
                                                                                         alt={`生成图 ${idx + 1}`}
                                                                                         onError={(e) => {
                                                                                             // 本地失败时回退到原始URL

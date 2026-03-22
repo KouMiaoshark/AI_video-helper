@@ -400,7 +400,7 @@ export const CustomNode = memo(({ id, data, selected }: NodeProps) => {
               value={(config.prompt as string) || ''}
               onChange={(e) => updateNodeConfig(id, { prompt: e.target.value })}
               placeholder="输入文本内容..."
-              className="w-full h-20 resize-none px-3 py-2 bg-white/[0.04] border border-white/[0.06] rounded-lg text-sm text-white/80 placeholder-white/20 focus:outline-none focus:border-blue-500/50"
+              className="w-full min-h-[5rem] max-h-[10rem] resize-y overflow-y-auto custom-scrollbar px-3 py-2 bg-white/[0.04] border border-white/[0.06] rounded-lg text-sm text-white/80 placeholder-white/20 focus:outline-none focus:border-blue-500/50"
             />
           </div>
         );
@@ -516,7 +516,7 @@ export const CustomNode = memo(({ id, data, selected }: NodeProps) => {
               <Label>描述</Label>
               <textarea value={(config.prompt as string) || ''} onChange={(e) => updateNodeConfig(id, { prompt: e.target.value })}
                 placeholder="描述你想要生成的画面..."
-                className="w-full h-16 mt-1.5 resize-none px-3 py-2 bg-white/[0.04] border border-white/[0.06] rounded-lg text-sm text-white/80 placeholder-white/20 focus:outline-none focus:border-yellow-500/50" />
+                className="w-full min-h-[4rem] max-h-[8rem] mt-1.5 resize-y overflow-y-auto custom-scrollbar px-3 py-2 bg-white/[0.04] border border-white/[0.06] rounded-lg text-sm text-white/80 placeholder-white/20 focus:outline-none focus:border-yellow-500/50" />
             </div>
             <div>
               <Label>模型</Label>
@@ -571,10 +571,10 @@ export const CustomNode = memo(({ id, data, selected }: NodeProps) => {
             <Label>提示词</Label>
             <textarea value={(config.prompt as string) || ''} onChange={(e) => updateNodeConfig(id, { prompt: e.target.value })}
               placeholder="Describe what you want to generate..."
-              className="w-full h-20 resize-none px-3 py-2 bg-white/[0.04] border border-white/[0.06] rounded-lg text-sm text-white/80 placeholder-white/20 focus:outline-none focus:border-purple-500/50" />
+              className="w-full min-h-[5rem] max-h-[10rem] resize-y overflow-y-auto custom-scrollbar px-3 py-2 bg-white/[0.04] border border-white/[0.06] rounded-lg text-sm text-white/80 placeholder-white/20 focus:outline-none focus:border-purple-500/50" />
             <textarea value={(config.negative_prompt as string) || ''} onChange={(e) => updateNodeConfig(id, { negative_prompt: e.target.value })}
               placeholder="Negative prompt (optional)..."
-              className="w-full h-12 resize-none px-3 py-2 bg-white/[0.04] border border-white/[0.06] rounded-lg text-xs text-white/60 placeholder-white/15 focus:outline-none focus:border-purple-500/50" />
+              className="w-full min-h-[3rem] max-h-[6rem] resize-y overflow-y-auto custom-scrollbar px-3 py-2 bg-white/[0.04] border border-white/[0.06] rounded-lg text-xs text-white/60 placeholder-white/15 focus:outline-none focus:border-purple-500/50" />
             <div>
               <Label>比例</Label>
               <div className="flex flex-wrap gap-1.5 mt-1.5">
@@ -604,7 +604,7 @@ export const CustomNode = memo(({ id, data, selected }: NodeProps) => {
             <Label>提示词</Label>
             <textarea value={(config.prompt as string) || ''} onChange={(e) => updateNodeConfig(id, { prompt: e.target.value })}
               placeholder="Describe the video you want..."
-              className="w-full h-20 resize-none px-3 py-2 bg-white/[0.04] border border-white/[0.06] rounded-lg text-sm text-white/80 placeholder-white/20 focus:outline-none focus:border-pink-500/50" />
+              className="w-full min-h-[5rem] max-h-[10rem] resize-y overflow-y-auto custom-scrollbar px-3 py-2 bg-white/[0.04] border border-white/[0.06] rounded-lg text-sm text-white/80 placeholder-white/20 focus:outline-none focus:border-pink-500/50" />
             <div>
               <Label>时长</Label>
               <div className="flex gap-1.5 mt-1.5">
@@ -684,7 +684,7 @@ export const CustomNode = memo(({ id, data, selected }: NodeProps) => {
             <Label>文本</Label>
             <textarea value={(config.text as string) || ''} onChange={(e) => updateNodeConfig(id, { text: e.target.value })}
               placeholder="Enter text for TTS..."
-              className="w-full h-20 resize-none px-3 py-2 bg-white/[0.04] border border-white/[0.06] rounded-lg text-sm text-white/80 placeholder-white/20 focus:outline-none focus:border-orange-500/50" />
+              className="w-full min-h-[5rem] max-h-[10rem] resize-y overflow-y-auto custom-scrollbar px-3 py-2 bg-white/[0.04] border border-white/[0.06] rounded-lg text-sm text-white/80 placeholder-white/20 focus:outline-none focus:border-orange-500/50" />
             <div>
               <Label>模型</Label>
               <div className="flex flex-wrap gap-1.5 mt-1.5">

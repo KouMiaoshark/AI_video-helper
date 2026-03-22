@@ -444,9 +444,9 @@ export function ChatImagePage({ active: _active }: { active: boolean }) {
                       } bg-black`}
                       onClick={() => setDetailId(isActive ? null : img.id)}
                     >
-                      <div className="aspect-square flex items-center justify-center">
+                      <div className="flex items-center justify-center min-h-[120px]">
                         <img src={img.url} alt="Generated"
-                          className="max-w-full max-h-full object-contain transition-transform duration-500 group-hover:scale-[1.03]"
+                          className="w-full object-contain transition-transform duration-500 group-hover:scale-[1.03]"
                           loading="lazy" />
                       </div>
                       <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-all duration-300">
@@ -772,7 +772,7 @@ export function ChatImagePage({ active: _active }: { active: boolean }) {
                       {detailImg.params.refImages!.map((url, i) => (
                         <div key={i} className="rounded-xl overflow-hidden border border-white/[0.06] cursor-pointer hover:border-purple-500/30 transition-all"
                           onClick={() => setRefPreviewUrl(url)}>
-                          <img src={url} alt={`Ref ${i + 1}`} className="w-full aspect-square object-cover" />
+                          <img src={url} alt={`Ref ${i + 1}`} className="w-full aspect-video object-contain bg-black/50" />
                         </div>
                       ))}
                     </div>
