@@ -292,23 +292,45 @@ export function ChatImagePage({ active: _active }: { active: boolean }) {
     setGenerating(true);
 
     try {
-      const body: Record<string, unknown> = {
-        prompt: fullPrompt, model: currentModel, width: 1024, height: 1024,
-        num_images: currentNumImages, image_size: currentImageSize, aspect_ratio: currentAspectRatio,
+      const buildBody = (): Record<string, unknown> => {
+        const body: Record<string, unknown> = {
+          prompt: fullPrompt,
+          model: currentModel,
+          width: 1024,
+          height: 1024,
+          num_images: 1, // 固定单次 1 张，前端并行请求实现批量
+          image_size: currentImageSize,
+          aspect_ratio: currentAspectRatio,
+        };
+        if (currentRefImages.length > 0) body.image_urls = currentRefImages;
+        return body;
       };
-      if (currentRefImages.length > 0) body.image_urls = currentRefImages;
 
-      const resp = await fetch('/api/generate/image?provider=bltcy', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
-      });
-
-      if (!resp.ok) {
-        const err = await resp.json().catch(() => ({ detail: resp.statusText }));
-        throw new Error(err.detail || '生成失败');
+      // 并行申请，避免后端/模型忽略 num_images 导致只能返回 1 张
+      const responses = await Promise.allSettled(
+        Array.from({ length: currentNumImages }, async () => {
+          const resp = await fetch('/api/generate/image?provider=bltcy', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(buildBody()),
+          });
+          if (!resp.ok) {
+            const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+            throw new Error(err.detail || '生成失败');
+          }
+          const data = await resp.json();
+          const imgs: string[] = Array.isArray(data?.images) ? data.images : [];
+          return imgs[0] || null;
+        })
+      );
+      const rawImages: string[] = responses
+        .filter((r): r is PromiseFulfilledResult<string | null> => r.status === 'fulfilled')
+        .map(r => r.value)
+        .filter((u): u is string => typeof u === 'string' && u.length > 0);
+      if (rawImages.length === 0) {
+        const firstRejected = responses.find((r): r is PromiseRejectedResult => r.status === 'rejected');
+        throw new Error(firstRejected?.reason?.message || '生成失败');
       }
-
-      const data = await resp.json();
-      const rawImages: string[] = data.images || [];
 
       // 保存到本地
       const savedImages: string[] = [];
@@ -444,9 +466,9 @@ export function ChatImagePage({ active: _active }: { active: boolean }) {
                       } bg-black`}
                       onClick={() => setDetailId(isActive ? null : img.id)}
                     >
-                      <div className="flex items-center justify-center min-h-[120px]">
+                      <div className="aspect-square bg-black flex items-center justify-center">
                         <img src={img.url} alt="Generated"
-                          className="w-full object-contain transition-transform duration-500 group-hover:scale-[1.03]"
+                          className="w-full h-full object-contain bg-black transition-transform duration-500 group-hover:scale-[1.03]"
                           loading="lazy" />
                       </div>
                       <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-all duration-300">
