@@ -19,7 +19,8 @@ tapnow-clone/
 │   ├── config/
 │   │   └── providers.json  # API 配置文件
 │   └── requirements.txt
-└── start.sh           # 一键启动
+├── start.sh           # 终端启动（macOS / Linux）
+└── start.command      # Finder 双击启动（macOS）
 ```
 
 ## 快速启动
@@ -53,10 +54,14 @@ tapnow-clone/
 
 ### 2. 启动
 
+终端启动：
+
 ```bash
-chmod +x start.sh
+chmod +x start.sh start.command
 ./start.sh
 ```
+
+如果你想像 Windows 一样在 macOS 上双击启动，第一次执行完上面的 `chmod` 后，可以直接在 Finder 中双击 `start.command`。
 
 或手动启动：
 

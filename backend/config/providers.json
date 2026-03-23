@@ -2,7 +2,7 @@
   "providers": {
     "bltcy": {
       "type": "bltcy",
-      "api_key": "YOUR_API_KEY_HERE",
+      "api_key": "sk-4fQ7ZrFT3O4e6dfGc2yi8LgU2dZgKxboGThgp10K5eWoEd1I",
       "base_url": "https://api.bltcy.ai/v1",
       "default_model": "nano-banana-pro"
     },

@@ -8,6 +8,8 @@ export default defineConfig({
     port: 3000,
     proxy: {
       '/api': 'http://localhost:8000',
+      '/tapnow-studio.html': 'http://localhost:8000',
+      '/vendor': 'http://localhost:8000',
     },
   },
 })

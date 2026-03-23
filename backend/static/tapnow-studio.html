@@ -1789,8 +1789,21 @@ You must design a visual composition that tells the story through **8 distinct p
             const [selectedNodeId, setSelectedNodeId] = useState(null);
 
             const [apiConfigs, setApiConfigs] = useState(() => {
-                const saved = localStorage.getItem('tapnow_api_configs');
-                let configs = saved ? JSON.parse(saved) : DEFAULT_API_CONFIGS;
+                let configs = DEFAULT_API_CONFIGS;
+                try {
+                    const saved = localStorage.getItem('tapnow_api_configs');
+                    if (saved) {
+                        const parsed = JSON.parse(saved);
+                        if (Array.isArray(parsed)) {
+                            configs = parsed;
+                        } else {
+                            console.warn('[Init] tapnow_api_configs 格式异常，已回退默认配置');
+                        }
+                    }
+                } catch (e) {
+                    console.warn('[Init] 读取 tapnow_api_configs 失败，已回退默认配置:', e);
+                    configs = DEFAULT_API_CONFIGS;
+                }
                 
                 // 确保 gpt-5.2 存在（如果不存在则添加）
                 const hasGpt52 = configs.some(c => c.id === 'gpt-5-2');
@@ -2080,6 +2093,13 @@ You must design a visual composition that tells the story through **8 distinct p
             // 本地缓存服务器状态
             const [localCacheServerConnected, setLocalCacheServerConnected] = useState(false);
             const localCacheServerUrl = 'http://127.0.0.1:9527';
+            const [localCacheServerEnabled, setLocalCacheServerEnabled] = useState(() => {
+                try {
+                    return localStorage.getItem('tapnow_local_cache_enabled') === 'true';
+                } catch (e) {
+                    return false;
+                }
+            });
             
             // 本地缓存服务器配置
             const [localServerConfig, setLocalServerConfig] = useState({
@@ -2136,6 +2156,16 @@ You must design a visual composition that tells the story through **8 distinct p
             useEffect(() => {
                 localStorage.setItem('tapnow_history_performance_mode', String(historyPerformanceMode));
             }, [historyPerformanceMode]);
+
+            useEffect(() => {
+                try {
+                    localStorage.setItem('tapnow_local_cache_enabled', String(localCacheServerEnabled));
+                } catch (e) {}
+                if (!localCacheServerEnabled) {
+                    setLocalCacheServerConnected(false);
+                    setLocalCacheSettingsOpen(false);
+                }
+            }, [localCacheServerEnabled]);
             
             // 性能模式变化时，为历史记录生成缩略图
             useEffect(() => {
@@ -2215,6 +2245,8 @@ You must design a visual composition that tells the story through **8 distinct p
             
             // 检查本地缓存服务器连接状态并获取配置
             useEffect(() => {
+                if (!localCacheServerEnabled) return;
+
                 const checkLocalCacheServer = async () => {
                     try {
                         const res = await fetch(`${localCacheServerUrl}/ping`, { method: 'GET' });
@@ -2241,7 +2273,7 @@ You must design a visual composition that tells the story through **8 distinct p
                 // 每30秒检查一次
                 const interval = setInterval(checkLocalCacheServer, 30000);
                 return () => clearInterval(interval);
-            }, []);
+            }, [localCacheServerEnabled]);
             
             // 更新本地服务器配置
             const updateLocalServerConfig = useCallback(async (newConfig) => {
@@ -7088,6 +7120,24 @@ You must design a visual composition that tells the story through **8 distinct p
                 };
                 // 优先使用 options 中的 model，其次使用节点设置，最后使用默认值
                 const modelId = options.model || node?.settings?.model || (type === 'image' ? 'nano-banana' : 'sora-2');
+                const requestedCountRaw = options.count ?? node?.settings?.count ?? 1;
+                const requestedCount = Math.max(1, Math.min(8, Number(requestedCountRaw) || 1));
+                if (type === 'image' && requestedCount > 1 && !options.__parallelChild) {
+                    const parallelResults = await Promise.allSettled(
+                        Array.from({ length: requestedCount }, () =>
+                            startGeneration(prompt, type, sourceImages, nodeId, { ...options, count: 1, __parallelChild: true })
+                        )
+                    );
+                    const hasAnySuccess = parallelResults.some((r) => r.status === 'fulfilled');
+                    if (!hasAnySuccess) {
+                        const firstFailed = parallelResults.find((r) => r.status === 'rejected');
+                        const reasonMsg = firstFailed && firstFailed.reason
+                            ? (firstFailed.reason.message || String(firstFailed.reason))
+                            : '并行生成失败';
+                        throw new Error(reasonMsg);
+                    }
+                    return;
+                }
                 const config = apiConfigsMap.get(modelId);
                 const apiKey = config?.key || globalApiKey;
                 // 统一去掉尾部 /v1，避免拼接端点时出现 /v1/v1 双层
@@ -18459,69 +18509,66 @@ You must design a visual composition that tells the story through **8 distinct p
                                                 const isMidjourney = currentModel && (currentModel.id.includes('mj') || currentModel.provider.toLowerCase().includes('midjourney'));
                                                 return !isMidjourney;
                                             })() ? (
-                                                <div className="relative">
-                                                    <button
-                                                        onClick={e => { e.stopPropagation(); setActiveDropdown(activeDropdown?.type === 'res' && activeDropdown.nodeId === node.id ? null : { nodeId: node.id, type: 'res' }); }}
-                                                        className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] border ${
-                                                            theme === 'dark'
-                                                                ? 'bg-zinc-800/50 hover:bg-zinc-800 text-zinc-400 border-zinc-700/50'
-                                                                : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-600 border-zinc-300'
-                                                        }`}
-                                                    >
-                                                        {(() => {
+                                                <>
+                                                    <div className="relative">
+                                                        <button
+                                                            onClick={e => { e.stopPropagation(); setActiveDropdown(activeDropdown?.type === 'res' && activeDropdown.nodeId === node.id ? null : { nodeId: node.id, type: 'res' }); }}
+                                                            className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] border ${
+                                                                theme === 'dark'
+                                                                    ? 'bg-zinc-800/50 hover:bg-zinc-800 text-zinc-400 border-zinc-700/50'
+                                                                    : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-600 border-zinc-300'
+                                                            }`}
+                                                        >
+                                                            {(() => {
+                                                                const currentModel = apiConfigsMap.get(node.settings?.model);
+                                                                const modelId = currentModel?.id || currentModel?.modelName || '';
+                                                                const availableResolutions = getResolutionsForModel(modelId);
+                                                                const currentResolution = node.settings?.resolution || 'Auto';
+                                                                const displayResolution = availableResolutions.includes(currentResolution)
+                                                                    ? currentResolution
+                                                                    : (availableResolutions[0] || 'Auto');
+                                                                if (!availableResolutions.includes(currentResolution) && availableResolutions.length > 0) {
+                                                                    setTimeout(() => {
+                                                                        updateNodeSettings(node.id, { resolution: availableResolutions[0] });
+                                                                    }, 0);
+                                                                }
+                                                                return displayResolution;
+                                                            })()}
+                                                        </button>
+                                                        {activeDropdown?.nodeId === node.id && activeDropdown.type === 'res' && (() => {
                                                             const currentModel = apiConfigsMap.get(node.settings?.model);
                                                             const modelId = currentModel?.id || currentModel?.modelName || '';
                                                             const availableResolutions = getResolutionsForModel(modelId);
-                                                            const currentResolution = node.settings?.resolution || 'Auto';
-                                                            // 如果当前分辨率不在可用选项中，使用第一个可用选项作为显示值
-                                                            const displayResolution = availableResolutions.includes(currentResolution) 
-                                                                ? currentResolution 
-                                                                : (availableResolutions[0] || 'Auto');
-                                                            // 如果当前分辨率不在可用选项中，自动更新
-                                                            if (!availableResolutions.includes(currentResolution) && availableResolutions.length > 0) {
-                                                                setTimeout(() => {
-                                                                    updateNodeSettings(node.id, { resolution: availableResolutions[0] });
-                                                                }, 0);
-                                                            }
-                                                            return displayResolution;
+                                                            return (
+                                                                <div
+                                                                    className={`absolute bottom-full right-0 mb-1 w-24 rounded-lg shadow-xl p-1 z-[60] border ${
+                                                                        theme === 'dark'
+                                                                            ? 'bg-[#18181b] border-zinc-700'
+                                                                            : 'bg-white border-zinc-200'
+                                                                    }`}
+                                                                    onMouseDown={e => e.stopPropagation()}
+                                                                >
+                                                                    {availableResolutions.map(r => (
+                                                                        <button
+                                                                            key={r}
+                                                                            onClick={() => {
+                                                                                updateNodeSettings(node.id, { resolution: r });
+                                                                                setActiveDropdown(null);
+                                                                            }}
+                                                                            className={`w-full text-center py-1 text-[10px] rounded ${
+                                                                                theme === 'dark'
+                                                                                    ? 'text-zinc-300 hover:bg-zinc-800'
+                                                                                    : 'text-zinc-700 hover:bg-zinc-100'
+                                                                            }`}
+                                                                        >
+                                                                            {r}
+                                                                        </button>
+                                                                    ))}
+                                                                </div>
+                                                            );
                                                         })()}
-                                                    </button>
-                                                    {activeDropdown?.nodeId === node.id && activeDropdown.type === 'res' && (() => {
-                                                        const currentModel = apiConfigsMap.get(node.settings?.model);
-                                                        const modelId = currentModel?.id || currentModel?.modelName || '';
-                                                        const availableResolutions = getResolutionsForModel(modelId);
-                                                        return (
-                                                            <div
-                                                                className={`absolute bottom-full right-0 mb-1 w-24 rounded-lg shadow-xl p-1 z-[60] border ${
-                                                                    theme === 'dark'
-                                                                        ? 'bg-[#18181b] border-zinc-700'
-                                                                        : 'bg-white border-zinc-200'
-                                                                }`}
-                                                                onMouseDown={e => e.stopPropagation()}
-                                                            >
-                                                                {availableResolutions.map(r => (
-                                                                    <button
-                                                                        key={r}
-                                                                        onClick={() => {
-                                                                            updateNodeSettings(node.id, { resolution: r });
-                                                                            setActiveDropdown(null);
-                                                                        }}
-                                                                        className={`w-full text-center py-1 text-[10px] rounded ${
-                                                                            theme === 'dark'
-                                                                                ? 'text-zinc-300 hover:bg-zinc-800'
-                                                                                : 'text-zinc-700 hover:bg-zinc-100'
-                                                                        }`}
-                                                                    >
-                                                                        {r}
-                                                                    </button>
-                                                                ))}
-                                                            </div>
-                                                        );
-                                                    })()}
-                                                </div>
+                                                    </div>
 
-                                                {/* 数量选择器（gen-image） */}
-                                                {node.type === 'gen-image' && (
                                                     <div className="relative">
                                                         <button
                                                             onClick={e => { e.stopPropagation(); setActiveDropdown(activeDropdown?.type === 'count' && activeDropdown.nodeId === node.id ? null : { nodeId: node.id, type: 'count' }); }}
@@ -18542,7 +18589,7 @@ You must design a visual composition that tells the story through **8 distinct p
                                                                 }`}
                                                                 onMouseDown={e => e.stopPropagation()}
                                                             >
-                                                                {[1,2,3,4,5,6,7,8].map(n => (
+                                                                {[1, 2, 3, 4, 5, 6, 7, 8].map(n => (
                                                                     <button
                                                                         key={n}
                                                                         onClick={() => {
@@ -18561,8 +18608,7 @@ You must design a visual composition that tells the story through **8 distinct p
                                                             </div>
                                                         )}
                                                     </div>
-                                                )}
-
+                                                </>
                                             ) : (
                                                 (() => {
                                                     const currentModel = apiConfigsMap.get(node.settings?.model);
@@ -18924,6 +18970,29 @@ You must design a visual composition that tells the story through **8 distinct p
                                         生成历史
                                     </h3>
                                     <div className="flex items-center gap-2">
+                                        <button
+                                            onClick={() => setLocalCacheServerEnabled(prev => !prev)}
+                                            className={`p-1.5 rounded transition-colors flex items-center gap-1 ${
+                                                localCacheServerEnabled
+                                                    ? localCacheServerConnected
+                                                        ? theme === 'dark'
+                                                            ? 'text-green-400 bg-green-500/20 hover:bg-green-500/30'
+                                                            : 'text-green-600 bg-green-100 hover:bg-green-200'
+                                                        : theme === 'dark'
+                                                            ? 'text-amber-400 bg-amber-500/20 hover:bg-amber-500/30'
+                                                            : 'text-amber-600 bg-amber-100 hover:bg-amber-200'
+                                                    : theme === 'dark'
+                                                        ? 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800'
+                                                        : 'text-zinc-500 hover:text-zinc-700 hover:bg-zinc-200'
+                                            }`}
+                                            title={
+                                                localCacheServerEnabled
+                                                    ? (localCacheServerConnected ? '本地缓存已启用（点击关闭）' : '正在尝试连接本地缓存（点击关闭）')
+                                                    : '启用本地缓存连接'
+                                            }
+                                        >
+                                            <HardDrive size={14} />
+                                        </button>
                                         {/* 性能模式开关 - 三档切换：off -> normal -> ultra -> off */}
                                         <button
                                             onClick={() => {
