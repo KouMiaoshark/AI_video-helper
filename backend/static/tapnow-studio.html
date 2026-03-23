@@ -1789,8 +1789,21 @@ You must design a visual composition that tells the story through **8 distinct p
             const [selectedNodeId, setSelectedNodeId] = useState(null);
 
             const [apiConfigs, setApiConfigs] = useState(() => {
-                const saved = localStorage.getItem('tapnow_api_configs');
-                let configs = saved ? JSON.parse(saved) : DEFAULT_API_CONFIGS;
+                let configs = DEFAULT_API_CONFIGS;
+                try {
+                    const saved = localStorage.getItem('tapnow_api_configs');
+                    if (saved) {
+                        const parsed = JSON.parse(saved);
+                        if (Array.isArray(parsed)) {
+                            configs = parsed;
+                        } else {
+                            console.warn('[Init] tapnow_api_configs 格式异常，已回退默认配置');
+                        }
+                    }
+                } catch (e) {
+                    console.warn('[Init] 读取 tapnow_api_configs 失败，已回退默认配置:', e);
+                    configs = DEFAULT_API_CONFIGS;
+                }
                 
                 // 确保 gpt-5.2 存在（如果不存在则添加）
                 const hasGpt52 = configs.some(c => c.id === 'gpt-5-2');
@@ -7088,6 +7101,24 @@ You must design a visual composition that tells the story through **8 distinct p
                 };
                 // 优先使用 options 中的 model，其次使用节点设置，最后使用默认值
                 const modelId = options.model || node?.settings?.model || (type === 'image' ? 'nano-banana' : 'sora-2');
+                const requestedCountRaw = options.count ?? node?.settings?.count ?? 1;
+                const requestedCount = Math.max(1, Math.min(8, Number(requestedCountRaw) || 1));
+                if (type === 'image' && requestedCount > 1 && !options.__parallelChild) {
+                    const parallelResults = await Promise.allSettled(
+                        Array.from({ length: requestedCount }, () =>
+                            startGeneration(prompt, type, sourceImages, nodeId, { ...options, count: 1, __parallelChild: true })
+                        )
+                    );
+                    const hasAnySuccess = parallelResults.some((r) => r.status === 'fulfilled');
+                    if (!hasAnySuccess) {
+                        const firstFailed = parallelResults.find((r) => r.status === 'rejected');
+                        const reasonMsg = firstFailed && firstFailed.reason
+                            ? (firstFailed.reason.message || String(firstFailed.reason))
+                            : '并行生成失败';
+                        throw new Error(reasonMsg);
+                    }
+                    return;
+                }
                 const config = apiConfigsMap.get(modelId);
                 const apiKey = config?.key || globalApiKey;
                 // 统一去掉尾部 /v1，避免拼接端点时出现 /v1/v1 双层
