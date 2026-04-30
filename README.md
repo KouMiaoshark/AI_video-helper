@@ -1,6 +1,8 @@
 # TapNow Clone - AI 视觉内容创作平台
 
-本地运行的 AI 创作工具，支持节点式工作流编辑。
+本项目是一个本地运行的 AI 创作工具。目前主要完善了网页生图页面，并接入了节点创作页面，支持通过节点式工作流组织图片、视频、脚本等生成流程。
+
+默认生图 API 来自柏拉图中转站 API。首次运行前需要完成 API 令牌配置。
 
 ## 架构
 
@@ -19,40 +21,55 @@ tapnow-clone/
 │   ├── config/
 │   │   └── providers.json  # API 配置文件
 │   └── requirements.txt
+├── 第一次启动.bat       # Windows 首次初始化启动
+├── start.bat          # Windows 日常启动
 ├── start.sh           # 终端启动（macOS / Linux）
 └── start.command      # Finder 双击启动（macOS）
 ```
 
 ## 快速启动
 
-### 1. 配置 API
+### 1. Windows 启动
 
-编辑 `backend/config/providers.json`，填入你的 API Key：
+第一次运行时，双击：
+
+```bat
+第一次启动.bat
+```
+
+以后再次运行时，直接双击：
+
+```bat
+start.bat
+```
+
+### 2. 配置 API
+
+默认生图 API 使用柏拉图中转站 API。请在后端配置文件中填入你的 API Key，并按需选择令牌分组。
+
+配置示例图：
+
+![API 配置图](docs/api-config.jpg)
+
+`backend/config/providers.json` 示例：
 
 ```json
 {
   "providers": {
-    "siliconflow": {
+    "bltcy": {
       "type": "openai_compatible",
       "api_key": "你的KEY",
-      "base_url": "https://api.siliconflow.cn/v1",
-      "default_model": "stabilityai/stable-diffusion-xl-base-1.0"
-    },
-    "deepseek": {
-      "type": "openai_compatible",
-      "api_key": "你的KEY",
-      "base_url": "https://api.deepseek.com",
-      "default_model": "deepseek-chat"
+      "base_url": "https://你的柏拉图中转站地址/v1",
+      "default_model": "gemini-2.5-flash-image-preview"
     }
   },
   "defaults": {
-    "image": "siliconflow",
-    "script": "deepseek"
+    "image": "bltcy"
   }
 }
 ```
 
-### 2. 启动
+### 3. macOS / Linux 启动
 
 终端启动：
 
@@ -63,7 +80,7 @@ chmod +x start.sh start.command
 
 如果你想像 Windows 一样在 macOS 上双击启动，第一次执行完上面的 `chmod` 后，可以直接在 Finder 中双击 `start.command`。
 
-或手动启动：
+也可以手动启动：
 
 ```bash
 # 后端
@@ -73,7 +90,7 @@ cd backend && python3 main.py
 cd frontend && npm run dev
 ```
 
-### 3. 访问
+### 4. 访问
 
 - **前端**：http://localhost:3000
 - **后端 API 文档**：http://localhost:8000/docs
