@@ -111,3 +111,12 @@ cd frontend && npm run dev
 2. 点击节点，在右侧面板配置参数
 3. 连线节点定义数据流
 4. 点击「运行节点」执行生成任务
+
+## 开源协议与第三方代码说明
+
+本项目包含不同来源的代码，因此按代码来源分别适用不同开源协议：
+
+- `studio` 页面接入自第三方项目 [Tapnow-Studio--](https://github.com/zhengxinlan1995-code/Tapnow-Studio--)。本仓库中与该 `studio` 页面相关的代码，以及基于该页面进行修改后的代码，按照 GNU General Public License v3.0 (GPLv3) 协议开源。
+- 除上述 `studio` 页面及其修改代码以外，本项目其余由 AI 辅助编写的代码按照 Apache License 2.0 协议开源。
+
+使用、修改或分发本项目时，请根据对应代码来源遵守相应协议条款。
