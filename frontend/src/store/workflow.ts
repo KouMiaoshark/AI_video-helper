@@ -1,21 +1,15 @@
-/**
- * Workflow Store - 管理画布节点和连线状态
- * 支持：节点数据流传递、撤销/重做、上下文菜单
- */
-
 import { create } from 'zustand';
 import {
-  type Node,
   type Edge,
-  type OnNodesChange,
-  type OnEdgesChange,
+  type Node,
   type OnConnect,
-  applyNodeChanges,
-  applyEdgeChanges,
+  type OnEdgesChange,
+  type OnNodesChange,
   addEdge,
+  applyEdgeChanges,
+  applyNodeChanges,
 } from '@xyflow/react';
 
-// ── Node types ──
 export type NodeDataType =
   | 'text-input'
   | 'image-output'
@@ -32,71 +26,26 @@ export interface NodeData {
   status: 'idle' | 'running' | 'done' | 'error';
   config: Record<string, unknown>;
   result?: unknown;
-  /** 数据流：记录自动填充的来源节点 */
-  _sourceMap?: Record<string, string>; // configField -> sourceNodeId
+  _sourceMap?: Record<string, string>;
   [key: string]: unknown;
 }
 
-// ── Data flow mapping ──
-// sourceType -> { targetType -> { sourceResultField: targetConfigField } }
-const DATA_FLOW_MAP: Record<string, Record<string, Record<string, string>>> = {
-  'image-output': {
-    'video-output': { 'images[0]': 'image_url' },
-    'enhance': { 'images[0]': 'image_url' },
-    'image-input': { 'images[0]': 'url' },
-    'banana-output': { 'images': 'image_urls' },
-  },
-  'banana-output': {
-    'video-output': { 'images[0]': 'image_url' },
-    'enhance': { 'images[0]': 'image_url' },
-    'image-input': { 'images[0]': 'url' },
-    'banana-output': { 'images': 'image_urls' },
-  },
-  'text-input': {
-    'image-output': { 'text': 'prompt' },
-    'banana-output': { 'text': 'prompt' },
-    'video-output': { 'text': 'prompt' },
-    'script-output': { 'text': 'topic' },
-    'audio-output': { 'text': 'text' },
-  },
-  'image-input': {
-    'video-output': { 'url': 'image_url' },
-    'enhance': { 'url': 'image_url' },
-    'banana-output': { 'url': 'image_urls' },
-    'image-output': { 'url': 'image_url' },
-  },
-};
-
-/**
- * 从 result 中根据映射规则提取值
- */
-function extractMappedValue(result: any, mapping: Record<string, string>): Record<string, unknown> {
-  if (!result) return {};
-  const out: Record<string, unknown> = {};
-  for (const [srcKey, targetKey] of Object.entries(mapping)) {
-    // 支持 images[0] 语法
-    const match = srcKey.match(/^(.+)\[(\d+)\]$/);
-    if (match) {
-      const arr = result[match[1]];
-      if (Array.isArray(arr) && arr[Number(match[2])] !== undefined) {
-        out[targetKey] = arr[Number(match[2])];
-      }
-    } else {
-      if (result[srcKey] !== undefined) {
-        out[targetKey] = result[srcKey];
-      }
-    }
-  }
-  return out;
-}
-
-// ── State ──
 interface UndoState {
   nodes: Node<NodeData>[];
   edges: Edge[];
 }
 
-// ── 工作流模板 ──
+export interface WorkflowCanvasMeta {
+  id: string;
+  name: string;
+  updatedAt: number;
+}
+
+interface StoredWorkflowCanvas {
+  nodes: Node<NodeData>[];
+  edges: Edge[];
+}
+
 export interface WorkflowTemplate {
   name: string;
   description: string;
@@ -104,10 +53,38 @@ export interface WorkflowTemplate {
   nodes: { type: NodeDataType; position: { x: number; y: number }; config?: Record<string, unknown> }[];
 }
 
+const DATA_FLOW_MAP: Record<string, Record<string, Record<string, string>>> = {
+  'image-output': {
+    'video-output': { 'images[0]': 'image_url' },
+    enhance: { 'images[0]': 'image_url' },
+    'image-input': { 'images[0]': 'url' },
+    'banana-output': { images: 'image_urls' },
+  },
+  'banana-output': {
+    'video-output': { 'images[0]': 'image_url' },
+    enhance: { 'images[0]': 'image_url' },
+    'image-input': { 'images[0]': 'url' },
+    'banana-output': { images: 'image_urls' },
+  },
+  'text-input': {
+    'image-output': { text: 'prompt' },
+    'banana-output': { text: 'prompt' },
+    'video-output': { text: 'prompt' },
+    'script-output': { text: 'topic' },
+    'audio-output': { text: 'text' },
+  },
+  'image-input': {
+    'video-output': { url: 'image_url' },
+    enhance: { url: 'image_url' },
+    'banana-output': { url: 'image_urls' },
+    'image-output': { url: 'image_url' },
+  },
+};
+
 export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
   {
     name: '文生图',
-    description: '文本 → 图像生成',
+    description: '文本 -> 图像生成',
     icon: '🎨',
     nodes: [
       { type: 'text-input', position: { x: 100, y: 200 }, config: { prompt: 'A beautiful landscape' } },
@@ -116,7 +93,7 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
   },
   {
     name: '图生视频',
-    description: '图片输入 → 视频生成',
+    description: '图片输入 -> 视频生成',
     icon: '🎬',
     nodes: [
       { type: 'image-input', position: { x: 100, y: 200 } },
@@ -125,8 +102,8 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
   },
   {
     name: '批量生图',
-    description: '文本 → 4张图（Banana）',
-    icon: '📦',
+    description: '文本 -> 4张图(Banana)',
+    icon: '🖼️',
     nodes: [
       { type: 'text-input', position: { x: 100, y: 200 }, config: { prompt: 'A cute cat' } },
       { type: 'banana-output', position: { x: 550, y: 180 }, config: { num_images: 4 } },
@@ -134,7 +111,7 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
   },
   {
     name: 'TTS 音频',
-    description: '文本 → 语音合成',
+    description: '文本 -> 语音合成',
     icon: '🔊',
     nodes: [
       { type: 'text-input', position: { x: 100, y: 200 }, config: { prompt: '你好，世界！' } },
@@ -143,7 +120,7 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
   },
   {
     name: '完整管线',
-    description: '文本 → 图像 → 增强 → 视频',
+    description: '文本 -> 图像 -> 增强 -> 视频',
     icon: '⚡',
     nodes: [
       { type: 'text-input', position: { x: 50, y: 250 }, config: { prompt: 'A cyberpunk city' } },
@@ -154,16 +131,125 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
   },
 ];
 
+export const nodeDefaults: Record<NodeDataType, { label: string; color: string }> = {
+  'text-input': { label: '📝 文本输入', color: '#3b82f6' },
+  'image-output': { label: '🎨 图像生成', color: '#8b5cf6' },
+  'video-output': { label: '🎬 视频生成', color: '#ec4899' },
+  'script-output': { label: '📜 脚本生成', color: '#f59e0b' },
+  enhance: { label: '✨ 图像增强', color: '#10b981' },
+  'image-input': { label: '🖼️ 图片输入', color: '#06b6d4' },
+  'audio-output': { label: '🔊 音频生成', color: '#f97316' },
+  'banana-output': { label: '🍌 Banana 生图', color: '#eab308' },
+};
+
+const LEGACY_WORKFLOW_KEY = 'tapnow-workflow';
+const CANVAS_INDEX_KEY = 'tapnow-workflow:canvases';
+const ACTIVE_CANVAS_KEY = 'tapnow-workflow:active-canvas';
+const CANVAS_DATA_PREFIX = 'tapnow-workflow:canvas:';
+const MAX_UNDO = 50;
+
+let nodeId = 0;
+
+const getId = () => `node_${++nodeId}`;
+const getCanvasStorageKey = (canvasId: string) => `${CANVAS_DATA_PREFIX}${canvasId}`;
+const createCanvasId = () => `canvas_${Math.random().toString(36).slice(2, 10)}`;
+
+function cloneGraphState(state: StoredWorkflowCanvas): StoredWorkflowCanvas {
+  return JSON.parse(JSON.stringify(state));
+}
+
+function createEmptyCanvasState(): StoredWorkflowCanvas {
+  return { nodes: [], edges: [] };
+}
+
+function syncNodeIdCounter(nodes: Node<NodeData>[]) {
+  const maxId = nodes.reduce((max, node) => {
+    const match = node.id.match(/^node_(\d+)$/);
+    if (!match) return max;
+    return Math.max(max, Number(match[1]));
+  }, 0);
+  nodeId = Math.max(nodeId, maxId);
+}
+
+function readCanvasIndex(): WorkflowCanvasMeta[] {
+  try {
+    const raw = localStorage.getItem(CANVAS_INDEX_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (item): item is WorkflowCanvasMeta =>
+        typeof item?.id === 'string' && typeof item?.name === 'string' && typeof item?.updatedAt === 'number',
+    );
+  } catch {
+    return [];
+  }
+}
+
+function writeCanvasIndex(list: WorkflowCanvasMeta[]) {
+  localStorage.setItem(CANVAS_INDEX_KEY, JSON.stringify(list));
+}
+
+function readCanvasData(canvasId: string): StoredWorkflowCanvas {
+  try {
+    const raw = localStorage.getItem(getCanvasStorageKey(canvasId));
+    if (!raw) return createEmptyCanvasState();
+    const parsed = JSON.parse(raw);
+    return {
+      nodes: Array.isArray(parsed?.nodes) ? parsed.nodes : [],
+      edges: Array.isArray(parsed?.edges) ? parsed.edges : [],
+    };
+  } catch {
+    return createEmptyCanvasState();
+  }
+}
+
+function writeCanvasData(canvasId: string, data: StoredWorkflowCanvas) {
+  localStorage.setItem(getCanvasStorageKey(canvasId), JSON.stringify(data));
+}
+
+function deleteCanvasData(canvasId: string) {
+  localStorage.removeItem(getCanvasStorageKey(canvasId));
+}
+
+function createCanvasMeta(name: string): WorkflowCanvasMeta {
+  return {
+    id: createCanvasId(),
+    name,
+    updatedAt: Date.now(),
+  };
+}
+
+function extractMappedValue(result: any, mapping: Record<string, string>): Record<string, unknown> {
+  if (!result) return {};
+  const out: Record<string, unknown> = {};
+
+  for (const [srcKey, targetKey] of Object.entries(mapping)) {
+    const match = srcKey.match(/^(.+)\[(\d+)\]$/);
+    if (match) {
+      const arr = result[match[1]];
+      if (Array.isArray(arr) && arr[Number(match[2])] !== undefined) {
+        out[targetKey] = arr[Number(match[2])];
+      }
+      continue;
+    }
+
+    if (result[srcKey] !== undefined) {
+      out[targetKey] = result[srcKey];
+    }
+  }
+
+  return out;
+}
+
 interface WorkflowState {
+  canvasList: WorkflowCanvasMeta[];
+  activeCanvasId: string | null;
   nodes: Node<NodeData>[];
   edges: Edge[];
   selectedNodeId: string | null;
-
-  // Undo/Redo
   undoStack: UndoState[];
   redoStack: UndoState[];
-
-  // Context menu
   contextMenu: { x: number; y: number; nodeId?: string } | null;
 
   onNodesChange: OnNodesChange;
@@ -180,42 +266,33 @@ interface WorkflowState {
   clearCanvas: () => void;
   duplicateNode: (id: string) => void;
 
-  // Undo/Redo
   undo: () => void;
   redo: () => void;
   saveUndo: () => void;
 
-  // Context menu
   setContextMenu: (menu: { x: number; y: number; nodeId?: string } | null) => void;
 
-  // Data flow
   propagateData: (sourceId: string) => void;
   applyDataFlowOnConnect: (sourceId: string, targetId: string) => void;
   _collectSourceUrls: (targetId: string) => { urls: string[]; sourceMap: Record<string, string> };
 
-  // Auto-save & templates
+  initializeCanvases: () => void;
   loadFromStorage: () => void;
   saveToStorage: () => void;
+  createCanvas: () => void;
+  switchCanvas: (id: string) => void;
+  deleteCanvas: (id: string) => void;
   loadTemplate: (template: WorkflowTemplate) => void;
 }
 
-export const nodeDefaults: Record<NodeDataType, { label: string; color: string }> = {
-  'text-input': { label: '📝 文本输入', color: '#3b82f6' },
-  'image-output': { label: '🎨 图像生成', color: '#8b5cf6' },
-  'video-output': { label: '🎬 视频生成', color: '#ec4899' },
-  'script-output': { label: '📜 脚本生成', color: '#f59e0b' },
-  'enhance': { label: '✨ 图像增强', color: '#10b981' },
-  'image-input': { label: '🖼️ 图片输入', color: '#06b6d4' },
-  'audio-output': { label: '🔊 音频生成', color: '#f97316' },
-  'banana-output': { label: '🍌 Banana 生图', color: '#eab308' },
-};
-
-let nodeId = 0;
-const getId = () => `node_${++nodeId}`;
-
-const MAX_UNDO = 50;
+function touchCanvasMeta(list: WorkflowCanvasMeta[], canvasId: string) {
+  const updatedAt = Date.now();
+  return list.map((canvas) => (canvas.id === canvasId ? { ...canvas, updatedAt } : canvas));
+}
 
 export const useWorkflowStore = create<WorkflowState>((set, get) => ({
+  canvasList: [],
+  activeCanvasId: null,
   nodes: [],
   edges: [],
   selectedNodeId: null,
@@ -223,13 +300,9 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
   redoStack: [],
   contextMenu: null,
 
-  // ── Undo/Redo ──
   saveUndo: () => {
     const { nodes, edges, undoStack } = get();
-    const snapshot: UndoState = {
-      nodes: JSON.parse(JSON.stringify(nodes)),
-      edges: JSON.parse(JSON.stringify(edges)),
-    };
+    const snapshot: UndoState = cloneGraphState({ nodes, edges });
     set({
       undoStack: [...undoStack.slice(-(MAX_UNDO - 1)), snapshot],
       redoStack: [],
@@ -237,73 +310,82 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
   },
 
   undo: () => {
-    const { undoStack, nodes, edges } = get();
+    const { undoStack, redoStack, nodes, edges } = get();
     if (undoStack.length === 0) return;
+
     const prev = undoStack[undoStack.length - 1];
-    const current: UndoState = {
-      nodes: JSON.parse(JSON.stringify(nodes)),
-      edges: JSON.parse(JSON.stringify(edges)),
-    };
+    const current: UndoState = cloneGraphState({ nodes, edges });
     set({
       nodes: prev.nodes,
       edges: prev.edges,
       undoStack: undoStack.slice(0, -1),
-      redoStack: [...get().redoStack, current],
+      redoStack: [...redoStack, current],
+      selectedNodeId: null,
     });
+    get().saveToStorage();
   },
 
   redo: () => {
-    const { redoStack, nodes, edges } = get();
+    const { undoStack, redoStack, nodes, edges } = get();
     if (redoStack.length === 0) return;
+
     const next = redoStack[redoStack.length - 1];
-    const current: UndoState = {
-      nodes: JSON.parse(JSON.stringify(nodes)),
-      edges: JSON.parse(JSON.stringify(edges)),
-    };
+    const current: UndoState = cloneGraphState({ nodes, edges });
     set({
       nodes: next.nodes,
       edges: next.edges,
       redoStack: redoStack.slice(0, -1),
-      undoStack: [...get().undoStack, current],
+      undoStack: [...undoStack, current],
+      selectedNodeId: null,
     });
+    get().saveToStorage();
   },
 
-  // ── Context menu ──
   setContextMenu: (menu) => set({ contextMenu: menu }),
 
-  // ── Data flow ──
-
-  /** 收集目标节点所有上游 source 的 URL（用于 image_urls 累积） */
-  _collectSourceUrls: (targetId: string) => {
+  _collectSourceUrls: (targetId) => {
     const { nodes, edges } = get();
-    const inEdges = edges.filter(e => e.target === targetId);
+    const inEdges = edges.filter((edge) => edge.target === targetId);
     const urls: string[] = [];
     const sourceMap: Record<string, string> = {};
+
     for (const edge of inEdges) {
-      const src = nodes.find(n => n.id === edge.source);
-      if (!src?.data.result) continue;
-      const r = src.data.result as any;
-      // image-input: { url }, image/banana-output: { images: [...] }，兼容多种格式
-      if (r.url) { urls.push(r.url); sourceMap['image_urls'] = src.id; }
-      else if (Array.isArray(r.images)) { urls.push(...r.images); sourceMap['image_urls'] = src.id; }
-      else if (Array.isArray(r.data)) { r.data.forEach((d: any) => { const u = d?.url; if (u) urls.push(u); }); sourceMap['image_urls'] = src.id; }
-      else if (typeof r.image_url === 'string') { urls.push(r.image_url); sourceMap['image_urls'] = src.id; }
+      const source = nodes.find((node) => node.id === edge.source);
+      if (!source?.data.result) continue;
+
+      const result = source.data.result as any;
+      if (typeof result.url === 'string') {
+        urls.push(result.url);
+        sourceMap.image_urls = source.id;
+      } else if (Array.isArray(result.images)) {
+        urls.push(...result.images);
+        sourceMap.image_urls = source.id;
+      } else if (Array.isArray(result.data)) {
+        result.data.forEach((item: any) => {
+          if (typeof item?.url === 'string') {
+            urls.push(item.url);
+          }
+        });
+        sourceMap.image_urls = source.id;
+      } else if (typeof result.image_url === 'string') {
+        urls.push(result.image_url);
+        sourceMap.image_urls = source.id;
+      }
     }
+
     return { urls, sourceMap };
   },
 
   applyDataFlowOnConnect: (sourceId, targetId) => {
     const { nodes, updateNodeConfig, _collectSourceUrls } = get();
-    const source = nodes.find(n => n.id === sourceId);
-    const target = nodes.find(n => n.id === targetId);
+    const source = nodes.find((node) => node.id === sourceId);
+    const target = nodes.find((node) => node.id === targetId);
     if (!source || !target) return;
 
     const mapping = DATA_FLOW_MAP[source.data.type]?.[target.data.type];
     if (!mapping) return;
 
-    // 特殊处理 image_urls：收集所有上游 URL
-    const hasImageUrls = Object.values(mapping).includes('image_urls');
-    if (hasImageUrls) {
+    if (Object.values(mapping).includes('image_urls')) {
       const { urls, sourceMap } = _collectSourceUrls(targetId);
       if (urls.length > 0) {
         updateNodeConfig(targetId, {
@@ -314,32 +396,34 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
       return;
     }
 
-    // 普通映射
     const values = extractMappedValue(source.data.result, mapping);
     if (Object.keys(values).length === 0) return;
+
     const sourceMapEntry: Record<string, string> = {};
     for (const [, targetKey] of Object.entries(mapping)) {
       sourceMapEntry[targetKey] = sourceId;
     }
-    updateNodeConfig(targetId, { ...values, _sourceMap: { ...(target.data._sourceMap || {}), ...sourceMapEntry } });
+
+    updateNodeConfig(targetId, {
+      ...values,
+      _sourceMap: { ...(target.data._sourceMap || {}), ...sourceMapEntry },
+    });
   },
 
   propagateData: (sourceId) => {
     const { nodes, edges, updateNodeConfig, _collectSourceUrls } = get();
-    const source = nodes.find(n => n.id === sourceId);
-    if (!source || !source.data.result) return;
+    const source = nodes.find((node) => node.id === sourceId);
+    if (!source?.data.result) return;
 
-    const outEdges = edges.filter(e => e.source === sourceId);
+    const outEdges = edges.filter((edge) => edge.source === sourceId);
     for (const edge of outEdges) {
-      const target = nodes.find(n => n.id === edge.target);
+      const target = nodes.find((node) => node.id === edge.target);
       if (!target) continue;
 
       const mapping = DATA_FLOW_MAP[source.data.type]?.[target.data.type];
       if (!mapping) continue;
 
-      // 特殊处理 image_urls
-      const hasImageUrls = Object.values(mapping).includes('image_urls');
-      if (hasImageUrls) {
+      if (Object.values(mapping).includes('image_urls')) {
         const { urls, sourceMap } = _collectSourceUrls(target.id);
         if (urls.length > 0) {
           updateNodeConfig(target.id, {
@@ -350,34 +434,37 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
         continue;
       }
 
-      // 普通映射
       const values = extractMappedValue(source.data.result, mapping);
       if (Object.keys(values).length === 0) continue;
+
       const sourceMapEntry: Record<string, string> = {};
       for (const [, targetKey] of Object.entries(mapping)) {
         sourceMapEntry[targetKey] = sourceId;
       }
-      updateNodeConfig(target.id, { ...values, _sourceMap: { ...(target.data._sourceMap || {}), ...sourceMapEntry } });
+
+      updateNodeConfig(target.id, {
+        ...values,
+        _sourceMap: { ...(target.data._sourceMap || {}), ...sourceMapEntry },
+      });
     }
   },
 
-  // ── Standard React Flow handlers ──
   onNodesChange: (changes) => {
     set({ nodes: applyNodeChanges(changes, get().nodes) as Node<NodeData>[] });
-    // 自动保存（防抖：直接存，localStorage 很快）
-    try { localStorage.setItem('tapnow-workflow', JSON.stringify({ nodes: get().nodes, edges: get().edges })); } catch {}
+    get().saveToStorage();
   },
 
   onEdgesChange: (changes) => {
     get().saveUndo();
     set({ edges: applyEdgeChanges(changes, get().edges) });
-    try { localStorage.setItem('tapnow-workflow', JSON.stringify({ nodes: get().nodes, edges: get().edges })); } catch {}
+    get().saveToStorage();
   },
 
   onConnect: (connection) => {
     get().saveUndo();
     set({ edges: addEdge(connection, get().edges) });
-    // 连线后立即传递数据
+    get().saveToStorage();
+
     if (connection.source && connection.target) {
       get().applyDataFlowOnConnect(connection.source, connection.target);
     }
@@ -398,16 +485,19 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
       },
       style: { width: 340 },
     };
+
     set({ nodes: [...get().nodes, newNode] });
+    get().saveToStorage();
   },
 
   removeNode: (id) => {
     get().saveUndo();
     set({
-      nodes: get().nodes.filter((n) => n.id !== id),
-      edges: get().edges.filter((e) => e.source !== id && e.target !== id),
+      nodes: get().nodes.filter((node) => node.id !== id),
+      edges: get().edges.filter((edge) => edge.source !== id && edge.target !== id),
       selectedNodeId: get().selectedNodeId === id ? null : get().selectedNodeId,
     });
+    get().saveToStorage();
   },
 
   removeNodes: (ids) => {
@@ -415,26 +505,62 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
     get().saveUndo();
     const idSet = new Set(ids);
     set({
-      nodes: get().nodes.filter((n) => !idSet.has(n.id)),
-      edges: get().edges.filter((e) => !idSet.has(e.source) && !idSet.has(e.target)),
+      nodes: get().nodes.filter((node) => !idSet.has(node.id)),
+      edges: get().edges.filter((edge) => !idSet.has(edge.source) && !idSet.has(edge.target)),
       selectedNodeId: null,
     });
+    get().saveToStorage();
   },
 
   updateNodeDimensions: (id, width, height) => {
-    get().onNodesChange([{
-      type: 'dimensions',
-      id,
-      dimensions: { width, height },
-      updateStyle: true,
-      resizing: true,
-    } as any]);
+    get().onNodesChange([
+      {
+        type: 'dimensions',
+        id,
+        dimensions: { width, height },
+        updateStyle: true,
+        resizing: true,
+      } as any,
+    ]);
+  },
+
+  updateNodeConfig: (id, config) => {
+    set({
+      nodes: get().nodes.map((node) =>
+        node.id === id
+          ? { ...node, data: { ...node.data, config: { ...node.data.config, ...config } } }
+          : node,
+      ),
+    });
+    get().saveToStorage();
+  },
+
+  updateNodeStatus: (id, status, result) => {
+    set({
+      nodes: get().nodes.map((node) =>
+        node.id === id ? { ...node, data: { ...node.data, status, result } } : node,
+      ),
+    });
+    get().saveToStorage();
+
+    if (status === 'done') {
+      setTimeout(() => get().propagateData(id), 50);
+    }
+  },
+
+  selectNode: (id) => set({ selectedNodeId: id }),
+
+  clearCanvas: () => {
+    get().saveUndo();
+    set({ nodes: [], edges: [], selectedNodeId: null });
+    get().saveToStorage();
   },
 
   duplicateNode: (id) => {
     get().saveUndo();
-    const node = get().nodes.find(n => n.id === id);
+    const node = get().nodes.find((item) => item.id === id);
     if (!node) return;
+
     const newNode: Node<NodeData> = {
       ...node,
       id: getId(),
@@ -445,84 +571,225 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
         result: undefined,
       },
     };
+
     set({ nodes: [...get().nodes, newNode] });
+    get().saveToStorage();
   },
 
-  updateNodeConfig: (id, config) => {
-    set({
-      nodes: get().nodes.map((n) =>
-        n.id === id ? { ...n, data: { ...n.data, config: { ...n.data.config, ...config } } } : n
-      ),
-    });
-  },
+  initializeCanvases: () => {
+    const existingIndex = readCanvasIndex();
 
-  updateNodeStatus: (id, status, result) => {
-    set({
-      nodes: get().nodes.map((n) =>
-        n.id === id ? { ...n, data: { ...n.data, status, result } } : n
-      ),
-    });
-    // 如果完成，自动传递数据到下游节点
-    if (status === 'done') {
-      // 延迟一下确保 state 已更新
-      setTimeout(() => get().propagateData(id), 50);
-    }
-  },
+    if (existingIndex.length === 0) {
+      const legacyRaw = localStorage.getItem(LEGACY_WORKFLOW_KEY);
+      if (legacyRaw) {
+        try {
+          const legacyParsed = JSON.parse(legacyRaw);
+          const migratedCanvas = createCanvasMeta('画布 1');
+          const migratedData: StoredWorkflowCanvas = {
+            nodes: Array.isArray(legacyParsed?.nodes) ? legacyParsed.nodes : [],
+            edges: Array.isArray(legacyParsed?.edges) ? legacyParsed.edges : [],
+          };
 
-  selectNode: (id) => set({ selectedNodeId: id }),
+          writeCanvasIndex([migratedCanvas]);
+          writeCanvasData(migratedCanvas.id, migratedData);
+          localStorage.setItem(ACTIVE_CANVAS_KEY, migratedCanvas.id);
+          localStorage.removeItem(LEGACY_WORKFLOW_KEY);
 
-  clearCanvas: () => {
-    get().saveUndo();
-    set({ nodes: [], edges: [], selectedNodeId: null });
-  },
-
-  // ── Auto-save & Templates ──
-  loadFromStorage: () => {
-    try {
-      const saved = localStorage.getItem('tapnow-workflow');
-      if (saved) {
-        const { nodes, edges } = JSON.parse(saved);
-        if (Array.isArray(nodes) && nodes.length > 0) {
-          set({ nodes, edges: edges || [], selectedNodeId: null });
-          console.log(`[AutoSave] 恢复了 ${nodes.length} 个节点`);
+          syncNodeIdCounter(migratedData.nodes);
+          set({
+            canvasList: [migratedCanvas],
+            activeCanvasId: migratedCanvas.id,
+            nodes: migratedData.nodes,
+            edges: migratedData.edges,
+            selectedNodeId: null,
+            undoStack: [],
+            redoStack: [],
+            contextMenu: null,
+          });
+          return;
+        } catch {
+          localStorage.removeItem(LEGACY_WORKFLOW_KEY);
         }
       }
-    } catch {}
+
+      const firstCanvas = createCanvasMeta('画布 1');
+      writeCanvasIndex([firstCanvas]);
+      writeCanvasData(firstCanvas.id, createEmptyCanvasState());
+      localStorage.setItem(ACTIVE_CANVAS_KEY, firstCanvas.id);
+      set({
+        canvasList: [firstCanvas],
+        activeCanvasId: firstCanvas.id,
+        nodes: [],
+        edges: [],
+        selectedNodeId: null,
+        undoStack: [],
+        redoStack: [],
+        contextMenu: null,
+      });
+      return;
+    }
+
+    const savedActiveCanvasId = localStorage.getItem(ACTIVE_CANVAS_KEY);
+    const activeCanvas =
+      existingIndex.find((canvas) => canvas.id === savedActiveCanvasId) ?? existingIndex[0];
+    const activeData = readCanvasData(activeCanvas.id);
+
+    syncNodeIdCounter(activeData.nodes);
+    set({
+      canvasList: existingIndex,
+      activeCanvasId: activeCanvas.id,
+      nodes: activeData.nodes,
+      edges: activeData.edges,
+      selectedNodeId: null,
+      undoStack: [],
+      redoStack: [],
+      contextMenu: null,
+    });
+    localStorage.setItem(ACTIVE_CANVAS_KEY, activeCanvas.id);
+  },
+
+  loadFromStorage: () => {
+    get().initializeCanvases();
   },
 
   saveToStorage: () => {
-    try {
-      const { nodes, edges } = get();
-      localStorage.setItem('tapnow-workflow', JSON.stringify({ nodes, edges }));
-    } catch {}
+    const { activeCanvasId, canvasList, nodes, edges } = get();
+    if (!activeCanvasId) return;
+
+    const clonedState = cloneGraphState({ nodes, edges });
+    const nextCanvasList = touchCanvasMeta(canvasList, activeCanvasId);
+
+    writeCanvasData(activeCanvasId, clonedState);
+    writeCanvasIndex(nextCanvasList);
+    localStorage.setItem(ACTIVE_CANVAS_KEY, activeCanvasId);
+
+    set({ canvasList: nextCanvasList });
   },
 
-  loadTemplate: (template: WorkflowTemplate) => {
+  createCanvas: () => {
+    const { canvasList } = get();
+    get().saveToStorage();
+
+    const nextCanvas = createCanvasMeta(`画布 ${canvasList.length + 1}`);
+    const nextCanvasList = [...get().canvasList, nextCanvas];
+    writeCanvasIndex(nextCanvasList);
+    writeCanvasData(nextCanvas.id, createEmptyCanvasState());
+    localStorage.setItem(ACTIVE_CANVAS_KEY, nextCanvas.id);
+
+    set({
+      canvasList: nextCanvasList,
+      activeCanvasId: nextCanvas.id,
+      nodes: [],
+      edges: [],
+      selectedNodeId: null,
+      undoStack: [],
+      redoStack: [],
+      contextMenu: null,
+    });
+  },
+
+  switchCanvas: (id) => {
+    const { activeCanvasId, canvasList } = get();
+    if (id === activeCanvasId || !canvasList.some((canvas) => canvas.id === id)) return;
+
+    get().saveToStorage();
+    const nextState = readCanvasData(id);
+    syncNodeIdCounter(nextState.nodes);
+    localStorage.setItem(ACTIVE_CANVAS_KEY, id);
+
+    set({
+      activeCanvasId: id,
+      nodes: nextState.nodes,
+      edges: nextState.edges,
+      selectedNodeId: null,
+      undoStack: [],
+      redoStack: [],
+      contextMenu: null,
+    });
+  },
+
+  deleteCanvas: (id) => {
+    const { activeCanvasId, canvasList } = get();
+    if (!canvasList.some((canvas) => canvas.id === id)) return;
+
+    get().saveToStorage();
+    const remainingCanvases = canvasList.filter((canvas) => canvas.id !== id);
+    deleteCanvasData(id);
+
+    if (remainingCanvases.length === 0) {
+      const replacementCanvas = createCanvasMeta('画布 1');
+      writeCanvasIndex([replacementCanvas]);
+      writeCanvasData(replacementCanvas.id, createEmptyCanvasState());
+      localStorage.setItem(ACTIVE_CANVAS_KEY, replacementCanvas.id);
+      set({
+        canvasList: [replacementCanvas],
+        activeCanvasId: replacementCanvas.id,
+        nodes: [],
+        edges: [],
+        selectedNodeId: null,
+        undoStack: [],
+        redoStack: [],
+        contextMenu: null,
+      });
+      return;
+    }
+
+    writeCanvasIndex(remainingCanvases);
+
+    if (activeCanvasId === id) {
+      const deletedIndex = canvasList.findIndex((canvas) => canvas.id === id);
+      const fallbackCanvas =
+        remainingCanvases[Math.max(0, Math.min(deletedIndex - 1, remainingCanvases.length - 1))] ??
+        remainingCanvases[0];
+      const fallbackState = readCanvasData(fallbackCanvas.id);
+      syncNodeIdCounter(fallbackState.nodes);
+      localStorage.setItem(ACTIVE_CANVAS_KEY, fallbackCanvas.id);
+
+      set({
+        canvasList: remainingCanvases,
+        activeCanvasId: fallbackCanvas.id,
+        nodes: fallbackState.nodes,
+        edges: fallbackState.edges,
+        selectedNodeId: null,
+        undoStack: [],
+        redoStack: [],
+        contextMenu: null,
+      });
+      return;
+    }
+
+    set({ canvasList: remainingCanvases });
+  },
+
+  loadTemplate: (template) => {
     get().saveUndo();
-    const newNodes: Node<NodeData>[] = template.nodes.map((n) => ({
+
+    const newNodes: Node<NodeData>[] = template.nodes.map((item) => ({
       id: getId(),
-      type: 'custom' as const,
-      position: { ...n.position },
+      type: 'custom',
+      position: { ...item.position },
       data: {
-        label: nodeDefaults[n.type].label,
-        type: n.type,
-        status: 'idle' as const,
-        config: { ...(n.config || {}) },
+        label: nodeDefaults[item.type].label,
+        type: item.type,
+        status: 'idle',
+        config: { ...(item.config || {}) },
       },
       style: { width: 340 },
     }));
-    // 自动连线（顺序连接）
+
     const newEdges: Edge[] = [];
-    for (let i = 0; i < newNodes.length - 1; i++) {
+    for (let index = 0; index < newNodes.length - 1; index += 1) {
       newEdges.push({
-        id: `e-${newNodes[i].id}-${newNodes[i + 1].id}`,
-        source: newNodes[i].id,
-        target: newNodes[i + 1].id,
+        id: `e-${newNodes[index].id}-${newNodes[index + 1].id}`,
+        source: newNodes[index].id,
+        target: newNodes[index + 1].id,
         type: 'smoothstep',
         animated: true,
         style: { stroke: '#7c5cfc', strokeWidth: 2 },
       });
     }
+
     set({ nodes: newNodes, edges: newEdges, selectedNodeId: null });
+    get().saveToStorage();
   },
 }));

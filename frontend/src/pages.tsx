@@ -3,14 +3,14 @@
  * 添加新页面只需往 PAGE_REGISTRY 加一项
  */
 
-import { Sparkles, Workflow, FolderOpen, LayoutGrid } from 'lucide-react';
+import { Workflow, FolderOpen, LayoutGrid, Globe2 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { ChatImagePage } from './components/ChatImagePage';
 import { AssetsPage } from './components/AssetsPage';
 import { TapnowStudioPage } from './components/TapnowStudioPage';
+import { HailuoOverseasPage } from './components/HailuoOverseasPage';
 import Canvas from './components/Canvas';
 
-export type PageId = 'tapnow' | 'chat' | 'assets' | 'studio';
+export type PageId = 'tapnow' | 'hailuo-global' | 'assets' | 'studio';
 
 export interface PageDef {
   id: PageId;
@@ -31,10 +31,10 @@ export interface PageDef {
  */
 export const PAGE_REGISTRY: PageDef[] = [
   {
-    id: 'chat',
-    label: '海螺',
-    icon: Sparkles,
-    component: ChatImagePage,
+    id: 'hailuo-global',
+    label: '网页生图',
+    icon: Globe2,
+    component: HailuoOverseasPage,
   },
   {
     id: 'tapnow',
@@ -57,4 +57,4 @@ export const PAGE_REGISTRY: PageDef[] = [
 ];
 
 // 默认首页
-export const DEFAULT_PAGE: PageId = 'chat';
+export const DEFAULT_PAGE: PageId = 'hailuo-global';

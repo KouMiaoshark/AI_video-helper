@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { SettingsPanel } from './components/SettingsPanel';
 import { PAGE_REGISTRY, DEFAULT_PAGE } from './pages';
@@ -7,6 +7,11 @@ import type { PageId } from './pages';
 function App() {
   const [activePage, setActivePage] = useState<PageId>(DEFAULT_PAGE);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [mountedPages, setMountedPages] = useState<PageId[]>([DEFAULT_PAGE]);
+
+  useEffect(() => {
+    setMountedPages((current) => (current.includes(activePage) ? current : [...current, activePage]));
+  }, [activePage]);
 
   return (
     <div className="h-screen w-screen flex">
@@ -20,6 +25,7 @@ function App() {
             非活跃页面使用 visibility 隐藏而不是 display:none，
             让像 Studio iframe 这类重资源页面也能继续后台初始化。 */}
         {PAGE_REGISTRY.map((page) => {
+          if (!mountedPages.includes(page.id)) return null;
           const PageComponent = page.component;
           const isActive = activePage === page.id;
           return (

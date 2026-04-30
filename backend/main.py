@@ -3,7 +3,7 @@ TapNow Clone - Backend API Server
 AI 视觉内容创作平台，支持多种 AI 模型提供商
 """
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -57,13 +57,22 @@ if os.path.isdir(VENDOR_DIR):
 FRONTEND_DIST = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "frontend", "dist"))
 
 if os.path.isdir(FRONTEND_DIST):
+    def frontend_response(path: str):
+        response = FileResponse(path)
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        return response
+
     # 所有非 /api 的请求返回前端 index.html（SPA 路由）
     @app.get("/{full_path:path}")
     async def serve_frontend(full_path: str):
         file_path = os.path.join(FRONTEND_DIST, full_path)
         if os.path.isfile(file_path):
-            return FileResponse(file_path)
-        return FileResponse(os.path.join(FRONTEND_DIST, "index.html"))
+            return frontend_response(file_path)
+        if full_path.startswith(("assets/", "favicon.svg", "icons.svg")):
+            raise HTTPException(status_code=404, detail="Static asset not found")
+        return frontend_response(os.path.join(FRONTEND_DIST, "index.html"))
 
     print(f"[Frontend] 托管静态文件: {FRONTEND_DIST}")
 else:

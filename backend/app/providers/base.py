@@ -23,6 +23,7 @@ class ImageGenRequest(BaseModel):
     image_urls: Optional[list[str]] = None  # 多张参考图（图生图，nano-banana-pro 支持1-9张）
     image_size: Optional[str] = None  # 分辨率：1K / 2K / 4K
     aspect_ratio: Optional[str] = None  # 比例：1:1, 16:9, 4:3 等
+    mentions: Optional[list[dict]] = None  # 结构化图片引用，前端 @ 图片选择会写入这里
 
 
 class ImageGenResponse(BaseModel):

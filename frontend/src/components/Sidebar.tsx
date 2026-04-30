@@ -54,7 +54,7 @@ export function Sidebar({ activePage, onNavigate, onOpenSettings, badges = {} }:
                 `}
               >
                 <Icon className="w-5 h-5" />
-                {!collapsed && <span className="text-[9px] font-medium">{page.label}</span>}
+                {!collapsed && <span className="max-w-[44px] text-center text-[9px] leading-tight font-medium">{page.label}</span>}
                 {active && (
                   <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-purple-400 rounded-r" />
                 )}

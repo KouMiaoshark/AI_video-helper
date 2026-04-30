@@ -9,6 +9,7 @@ Bltcy.ai 兼容 Provider
 import httpx
 import re
 import base64
+import json
 from typing import Optional
 
 from app.providers.base import (
@@ -24,7 +25,7 @@ class BltcyProvider(BaseProvider):
     supported_tasks = ["image", "audio"]
 
     # 图像模型
-    IMAGE_MODELS = ["nano-banana-2", "nano-banana-pro", "flux-1.1-pro", "sdxl", "dall-e-3"]
+    IMAGE_MODELS = ["gpt-image-2", "nano-banana-2", "nano-banana-pro", "flux-1.1-pro", "sdxl", "dall-e-3"]
     # 音频模型
     AUDIO_MODELS = ["tts-1", "tts-1-hd"]
     # 所有模型
@@ -133,8 +134,115 @@ class BltcyProvider(BaseProvider):
         if model == "nano-banana-2":
             return await self._generate_edits(req, ref_urls, aspect)
 
+        # OpenAI GPT Image 系列走标准图片端点；有参考图时走 edits
+        if model.startswith("gpt-image-"):
+            return await self._generate_openai_image(req, ref_urls, aspect, model)
+
         # 其他模型（flux, sdxl, dall-e-3）走通用 OpenAI images/generations
         return await self._generate_generic(req, ref_urls, aspect, model)
+
+    @staticmethod
+    def _openai_image_size(aspect: Optional[str], image_size: Optional[str]) -> str:
+        """把前端比例映射到 GPT Image 尺寸，保留 21:9 这类超宽比例。"""
+        scale = {"1K": 1, "2K": 2, "4K": 3}.get(image_size or "1K", 1)
+        base_sizes = {
+            "3:1": (1536, 512),
+            "1:3": (512, 1536),
+            "21:9": (1344, 576),
+            "16:9": (1024, 576),
+            "4:3": (1024, 768),
+            "3:4": (768, 1024),
+            "9:16": (576, 1024),
+            "1:1": (1024, 1024),
+        }
+        width, height = base_sizes.get(aspect or "1:1", base_sizes["1:1"])
+        return f"{width * scale}x{height * scale}"
+
+    async def _generate_openai_image(self, req: ImageGenRequest, ref_urls: list, aspect: Optional[str], model: str) -> ImageGenResponse:
+        """GPT Image 系列：OpenAI 兼容 /images/generations 或 /images/edits。"""
+        print(f"[Bltcy/GPTImage] 模型 {model}，{len(ref_urls)} 张参考图")
+        size = self._openai_image_size(aspect, req.image_size)
+
+        async with httpx.AsyncClient(timeout=180) as client:
+            if ref_urls:
+                multipart_fields = [
+                    ("model", (None, model)),
+                    ("prompt", (None, req.prompt)),
+                    ("n", (None, str(req.num_images))),
+                    ("size", (None, size)),
+                    ("mentions", (None, json.dumps(req.mentions or [], ensure_ascii=False))),
+                ]
+                if aspect:
+                    multipart_fields.append(("aspect_ratio", (None, aspect)))
+
+                for i, url in enumerate(ref_urls):
+                    if url.startswith("data:"):
+                        header, b64_data = url.split(",", 1)
+                        mime_type = header.split(";")[0].replace("data:", "")
+                        img_bytes = base64.b64decode(b64_data)
+                        ext_map = {"image/jpeg": ".jpg", "image/jpg": ".jpg", "image/webp": ".webp", "image/png": ".png"}
+                        ext = ext_map.get(mime_type, ".png")
+                        content_type = mime_type
+                    else:
+                        if url.startswith("/"):
+                            url = f"http://127.0.0.1:8000{url}"
+                            if "/uploads/" in url and "/api/uploads/" not in url:
+                                url = url.replace("/uploads/", "/api/uploads/")
+                        img_resp = await client.get(url)
+                        img_resp.raise_for_status()
+                        img_bytes = img_resp.content
+                        content_type = img_resp.headers.get("content-type", "image/png")
+                        if "jpeg" in content_type or "jpg" in content_type:
+                            ext = ".jpg"
+                        elif "webp" in content_type:
+                            ext = ".webp"
+                        else:
+                            ext = ".png"
+
+                    multipart_fields.append(("image", (f"ref_{i}{ext}", img_bytes, content_type)))
+
+                endpoint = "/images/edits"
+                print(f"[Bltcy/GPTImage] POST {endpoint} (multipart)")
+                resp = await client.post(
+                    f"{self.base_url}{endpoint}",
+                    headers={"Authorization": f"Bearer {self.api_key}"},
+                    files=multipart_fields,
+                )
+            else:
+                body = {
+                    "model": model,
+                    "prompt": req.prompt,
+                    "n": req.num_images,
+                    "size": size,
+                    "mentions": req.mentions or [],
+                }
+                if aspect:
+                    body["aspect_ratio"] = aspect
+
+                endpoint = "/images/generations"
+                print(f"[Bltcy/GPTImage] POST {endpoint} (json)")
+                resp = await client.post(
+                    f"{self.base_url}{endpoint}",
+                    headers={
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json=body,
+                )
+
+            print(f"[Bltcy/GPTImage] 响应状态: {resp.status_code}")
+            if resp.status_code >= 400:
+                print(f"[Bltcy/GPTImage] 错误 {resp.status_code}: {resp.text[:500]}")
+            resp.raise_for_status()
+
+            data = resp.json()
+            images = self._extract_images(data)
+            print(f"[Bltcy/GPTImage] 提取到 {len(images)} 张图片")
+
+            if not images:
+                raise Exception(f"Bltcy GPT Image API 未返回图片。响应 keys: {list(data.keys())}, 样本: {str(data)[:500]}")
+
+            return ImageGenResponse(images=images, model=model, provider=self.name)
 
     async def _generate_gemini(self, req: ImageGenRequest, ref_urls: list, aspect: Optional[str]) -> ImageGenResponse:
         """nano-banana-pro: Gemini 官方格式"""
@@ -266,6 +374,7 @@ class BltcyProvider(BaseProvider):
                     ("prompt", (None, req.prompt)),
                     ("n", (None, str(req.num_images))),
                     ("response_format", (None, "url")),
+                    ("mentions", (None, json.dumps(req.mentions or [], ensure_ascii=False))),
                 ]
                 if aspect:
                     multipart_fields.append(("aspect_ratio", (None, aspect)))
@@ -314,6 +423,7 @@ class BltcyProvider(BaseProvider):
                     "prompt": req.prompt,
                     "n": req.num_images,
                     "response_format": "url",
+                    "mentions": req.mentions or [],
                 }
                 if aspect:
                     body["aspect_ratio"] = aspect
@@ -363,6 +473,7 @@ class BltcyProvider(BaseProvider):
             "n": req.num_images,
             "size": size,
             "response_format": "url",
+            "mentions": req.mentions or [],
         }
 
         async with httpx.AsyncClient(timeout=180) as client:
@@ -394,7 +505,7 @@ class BltcyProvider(BaseProvider):
             return None
         ratio = width / height
         candidates = {
-            "1:1": 1.0, "2:3": 2/3, "3:2": 3/2, "3:4": 3/4,
+            "1:1": 1.0, "1:3": 1/3, "3:1": 3.0, "2:3": 2/3, "3:2": 3/2, "3:4": 3/4,
             "4:3": 4/3, "4:5": 4/5, "5:4": 5/4,
             "9:16": 9/16, "16:9": 16/9, "21:9": 21/9,
         }

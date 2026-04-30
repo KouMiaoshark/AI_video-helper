@@ -357,6 +357,132 @@
             
             // 初始更新
             useEffect(() => {
+                try {
+                    const storedIndexRaw = localStorage.getItem(STUDIO_CANVAS_INDEX_KEY);
+                    const storedIndex = storedIndexRaw ? JSON.parse(storedIndexRaw) : [];
+                    const validIndex = Array.isArray(storedIndex) ? storedIndex : [];
+
+                    if (!validIndex.length) {
+                        const initialCanvas = createStudioCanvasMeta('画布 1');
+                        setCanvasList([initialCanvas]);
+                        setActiveCanvasId(initialCanvas.id);
+                        writeCanvasIndex([initialCanvas]);
+                        writeCanvasData(initialCanvas.id, {
+                            nodes: [],
+                            connections: [],
+                            view: { x: 0, y: 0, zoom: 1 },
+                            projectName: projectNameRef.current || '未命名项目',
+                        });
+                        localStorage.setItem(STUDIO_ACTIVE_CANVAS_KEY, initialCanvas.id);
+                    } else {
+                        setCanvasList(validIndex);
+                        const storedActiveId = localStorage.getItem(STUDIO_ACTIVE_CANVAS_KEY);
+                        const activeCanvas = validIndex.find((item) => item.id === storedActiveId) || validIndex[0];
+                        loadCanvasById(activeCanvas.id, { closePanel: false });
+                    }
+                } catch (e) {
+                    const fallbackCanvas = createStudioCanvasMeta('画布 1');
+                    setCanvasList([fallbackCanvas]);
+                    setActiveCanvasId(fallbackCanvas.id);
+                    writeCanvasIndex([fallbackCanvas]);
+                    writeCanvasData(fallbackCanvas.id, {
+                        nodes: [],
+                        connections: [],
+                        view: { x: 0, y: 0, zoom: 1 },
+                        projectName: '未命名项目',
+                    });
+                } finally {
+                    setCanvasesHydrated(true);
+                }
+            }, []);
+
+            useEffect(() => {
+                if (!canvasesHydrated || !activeCanvasId) return;
+                const timer = setTimeout(() => {
+                    persistCanvasSnapshot(activeCanvasId);
+                }, 180);
+                return () => clearTimeout(timer);
+            }, [nodes, connections, view, projectName, activeCanvasId, canvasesHydrated, persistCanvasSnapshot]);
+
+            const handleCreateCanvas = useCallback(() => {
+                if (activeCanvasId) {
+                    persistCanvasSnapshot(activeCanvasId);
+                }
+                const nextCanvas = createStudioCanvasMeta(`画布 ${canvasList.length + 1}`);
+                const nextList = [...canvasList, nextCanvas];
+                setCanvasList(nextList);
+                writeCanvasIndex(nextList);
+                writeCanvasData(nextCanvas.id, {
+                    nodes: [],
+                    connections: [],
+                    view: { x: 0, y: 0, zoom: 1 },
+                    projectName: '未命名项目',
+                });
+                setNodes([]);
+                setConnections([]);
+                setView({ x: 0, y: 0, zoom: 1 });
+                setProjectName('未命名项目');
+                setSelectedNodeId(null);
+                setSelectedNodeIds(new Set());
+                setActiveCanvasId(nextCanvas.id);
+                setCanvasPanelOpen(true);
+                try {
+                    localStorage.setItem(STUDIO_ACTIVE_CANVAS_KEY, nextCanvas.id);
+                } catch (e) {}
+            }, [activeCanvasId, canvasList, persistCanvasSnapshot, writeCanvasData, writeCanvasIndex]);
+
+            const handleSwitchCanvas = useCallback((canvasId) => {
+                if (!canvasId || canvasId === activeCanvasId) return;
+                if (activeCanvasId) {
+                    persistCanvasSnapshot(activeCanvasId);
+                }
+                loadCanvasById(canvasId);
+            }, [activeCanvasId, loadCanvasById, persistCanvasSnapshot]);
+
+            const handleDeleteCanvas = useCallback((canvasId) => {
+                const targetIndex = canvasList.findIndex((item) => item.id === canvasId);
+                if (targetIndex === -1) return;
+
+                const remaining = canvasList.filter((item) => item.id !== canvasId);
+                try {
+                    localStorage.removeItem(getStudioCanvasStorageKey(canvasId));
+                } catch (e) {}
+
+                if (!remaining.length) {
+                    const replacementCanvas = createStudioCanvasMeta('画布 1');
+                    setCanvasList([replacementCanvas]);
+                    writeCanvasIndex([replacementCanvas]);
+                    writeCanvasData(replacementCanvas.id, {
+                        nodes: [],
+                        connections: [],
+                        view: { x: 0, y: 0, zoom: 1 },
+                        projectName: '未命名项目',
+                    });
+                    setNodes([]);
+                    setConnections([]);
+                    setView({ x: 0, y: 0, zoom: 1 });
+                    setProjectName('未命名项目');
+                    setSelectedNodeId(null);
+                    setSelectedNodeIds(new Set());
+                    setActiveCanvasId(replacementCanvas.id);
+                    setCanvasPanelOpen(true);
+                    try {
+                        localStorage.setItem(STUDIO_ACTIVE_CANVAS_KEY, replacementCanvas.id);
+                    } catch (e) {}
+                    return;
+                }
+
+                setCanvasList(remaining);
+                writeCanvasIndex(remaining);
+
+                if (activeCanvasId === canvasId) {
+                    const fallbackCanvas = remaining[Math.max(0, targetIndex - 1)] || remaining[0];
+                    loadCanvasById(fallbackCanvas.id, { closePanel: false });
+                    setCanvasPanelOpen(true);
+                }
+            }, [activeCanvasId, canvasList, loadCanvasById, writeCanvasData, writeCanvasIndex]);
+
+            useEffect(() => {
                 if (!canvasRef.current) return;
                 updateMask();
             }, [canvasRef, updateMask]);
@@ -1804,7 +1930,6 @@ You must design a visual composition that tells the story through **8 distinct p
                     console.warn('[Init] 读取 tapnow_api_configs 失败，已回退默认配置:', e);
                     configs = DEFAULT_API_CONFIGS;
                 }
-                
                 // 确保 gpt-5.2 存在（如果不存在则添加）
                 const hasGpt52 = configs.some(c => c.id === 'gpt-5-2');
                 if (!hasGpt52) {
@@ -1916,10 +2041,235 @@ You must design a visual composition that tells the story through **8 distinct p
                     return '未命名项目';
                 }
             });
+            const STUDIO_CANVAS_INDEX_KEY = 'tapnow_studio_canvases';
+            const STUDIO_ACTIVE_CANVAS_KEY = 'tapnow_studio_active_canvas';
+            const getStudioCanvasStorageKey = (canvasId) => `tapnow_studio_canvas:${canvasId}`;
+            const createStudioCanvasMeta = (name) => ({
+                id: `canvas_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+                name,
+                updatedAt: Date.now(),
+            });
+            const [canvasList, setCanvasList] = useState([]);
+            const [activeCanvasId, setActiveCanvasId] = useState(null);
+            const [canvasPanelOpen, setCanvasPanelOpen] = useState(false);
+            const [canvasesHydrated, setCanvasesHydrated] = useState(false);
+            const [editingCanvasId, setEditingCanvasId] = useState(null);
+            const [editingCanvasName, setEditingCanvasName] = useState('');
             const [isEditingProjectName, setIsEditingProjectName] = useState(false);
             const projectNameInputRef = useRef(null);
 
+            const writeCanvasIndex = useCallback((list) => {
+                try {
+                    localStorage.setItem(STUDIO_CANVAS_INDEX_KEY, JSON.stringify(list));
+                } catch (e) {}
+            }, []);
+
+            const writeCanvasData = useCallback((canvasId, data) => {
+                try {
+                    localStorage.setItem(getStudioCanvasStorageKey(canvasId), JSON.stringify(data));
+                } catch (e) {}
+            }, []);
+
+            const persistCanvasSnapshot = useCallback((canvasId, snapshot = null) => {
+                if (!canvasId) return;
+                const payload = snapshot || {
+                    nodes: nodesRef.current || [],
+                    connections: connectionsRef.current || [],
+                    view: viewRef.current || { x: 0, y: 0, zoom: 1 },
+                    projectName: projectNameRef.current || '未命名项目',
+                };
+                writeCanvasData(canvasId, payload);
+                setCanvasList((prev) => {
+                    const next = prev.map((canvas) =>
+                        canvas.id === canvasId ? { ...canvas, updatedAt: Date.now() } : canvas
+                    );
+                    writeCanvasIndex(next);
+                    return next;
+                });
+                try {
+                    localStorage.setItem(STUDIO_ACTIVE_CANVAS_KEY, canvasId);
+                } catch (e) {}
+            }, [writeCanvasData, writeCanvasIndex]);
+
+            const loadCanvasById = useCallback((canvasId, options = {}) => {
+                const { closePanel = true } = options;
+                try {
+                    const raw = localStorage.getItem(getStudioCanvasStorageKey(canvasId));
+                    const parsed = raw ? JSON.parse(raw) : {};
+                    setNodes(Array.isArray(parsed.nodes) ? parsed.nodes : []);
+                    setConnections(Array.isArray(parsed.connections) ? parsed.connections : []);
+                    setView(parsed.view && typeof parsed.view === 'object' ? parsed.view : { x: 0, y: 0, zoom: 1 });
+                    setProjectName(parsed.projectName || '未命名项目');
+                    setSelectedNodeId(null);
+                    setSelectedNodeIds(new Set());
+                    setActiveCanvasId(canvasId);
+                    if (closePanel) setCanvasPanelOpen(false);
+                    try {
+                        localStorage.setItem(STUDIO_ACTIVE_CANVAS_KEY, canvasId);
+                    } catch (e) {}
+                } catch (e) {
+                    setNodes([]);
+                    setConnections([]);
+                    setView({ x: 0, y: 0, zoom: 1 });
+                    setProjectName('未命名项目');
+                    setSelectedNodeId(null);
+                    setSelectedNodeIds(new Set());
+                    setActiveCanvasId(canvasId);
+                    if (closePanel) setCanvasPanelOpen(false);
+                }
+            }, []);
+
             // 进度条状态
+            useEffect(() => {
+                try {
+                    const storedIndexRaw = localStorage.getItem(STUDIO_CANVAS_INDEX_KEY);
+                    const storedIndex = storedIndexRaw ? JSON.parse(storedIndexRaw) : [];
+                    const validIndex = Array.isArray(storedIndex) ? storedIndex : [];
+
+                    if (!validIndex.length) {
+                        const initialCanvas = createStudioCanvasMeta('画布 1');
+                        setCanvasList([initialCanvas]);
+                        setActiveCanvasId(initialCanvas.id);
+                        writeCanvasIndex([initialCanvas]);
+                        writeCanvasData(initialCanvas.id, {
+                            nodes: [],
+                            connections: [],
+                            view: { x: 0, y: 0, zoom: 1 },
+                            projectName: '未命名项目',
+                        });
+                        localStorage.setItem(STUDIO_ACTIVE_CANVAS_KEY, initialCanvas.id);
+                    } else {
+                        setCanvasList(validIndex);
+                        const storedActiveId = localStorage.getItem(STUDIO_ACTIVE_CANVAS_KEY);
+                        const activeCanvas = validIndex.find((item) => item.id === storedActiveId) || validIndex[0];
+                        loadCanvasById(activeCanvas.id, { closePanel: false });
+                    }
+                } catch (e) {
+                    const fallbackCanvas = createStudioCanvasMeta('画布 1');
+                    setCanvasList([fallbackCanvas]);
+                    setActiveCanvasId(fallbackCanvas.id);
+                    writeCanvasIndex([fallbackCanvas]);
+                    writeCanvasData(fallbackCanvas.id, {
+                        nodes: [],
+                        connections: [],
+                        view: { x: 0, y: 0, zoom: 1 },
+                        projectName: '未命名项目',
+                    });
+                } finally {
+                    setCanvasesHydrated(true);
+                }
+            }, [loadCanvasById, writeCanvasData, writeCanvasIndex]);
+
+            useEffect(() => {
+                if (!canvasesHydrated || !activeCanvasId) return;
+                const timer = setTimeout(() => {
+                    persistCanvasSnapshot(activeCanvasId);
+                }, 180);
+                return () => clearTimeout(timer);
+            }, [nodes, connections, view, projectName, activeCanvasId, canvasesHydrated, persistCanvasSnapshot]);
+
+            const handleCreateCanvas = useCallback(() => {
+                if (activeCanvasId) {
+                    persistCanvasSnapshot(activeCanvasId);
+                }
+                const nextCanvas = createStudioCanvasMeta(`画布 ${canvasList.length + 1}`);
+                const nextList = [...canvasList, nextCanvas];
+                setCanvasList(nextList);
+                writeCanvasIndex(nextList);
+                writeCanvasData(nextCanvas.id, {
+                    nodes: [],
+                    connections: [],
+                    view: { x: 0, y: 0, zoom: 1 },
+                    projectName: '未命名项目',
+                });
+                setNodes([]);
+                setConnections([]);
+                setView({ x: 0, y: 0, zoom: 1 });
+                setProjectName('未命名项目');
+                setSelectedNodeId(null);
+                setSelectedNodeIds(new Set());
+                setActiveCanvasId(nextCanvas.id);
+                setCanvasPanelOpen(true);
+                try {
+                    localStorage.setItem(STUDIO_ACTIVE_CANVAS_KEY, nextCanvas.id);
+                } catch (e) {}
+            }, [activeCanvasId, canvasList, persistCanvasSnapshot, writeCanvasData, writeCanvasIndex]);
+
+            const handleSwitchCanvas = useCallback((canvasId) => {
+                if (!canvasId || canvasId === activeCanvasId) return;
+                if (activeCanvasId) {
+                    persistCanvasSnapshot(activeCanvasId);
+                }
+                loadCanvasById(canvasId);
+            }, [activeCanvasId, loadCanvasById, persistCanvasSnapshot]);
+
+            const handleDeleteCanvas = useCallback((canvasId) => {
+                const targetIndex = canvasList.findIndex((item) => item.id === canvasId);
+                if (targetIndex === -1) return;
+
+                const remaining = canvasList.filter((item) => item.id !== canvasId);
+                try {
+                    localStorage.removeItem(getStudioCanvasStorageKey(canvasId));
+                } catch (e) {}
+
+                if (!remaining.length) {
+                    const replacementCanvas = createStudioCanvasMeta('画布 1');
+                    setCanvasList([replacementCanvas]);
+                    writeCanvasIndex([replacementCanvas]);
+                    writeCanvasData(replacementCanvas.id, {
+                        nodes: [],
+                        connections: [],
+                        view: { x: 0, y: 0, zoom: 1 },
+                        projectName: '未命名项目',
+                    });
+                    setNodes([]);
+                    setConnections([]);
+                    setView({ x: 0, y: 0, zoom: 1 });
+                    setProjectName('未命名项目');
+                    setSelectedNodeId(null);
+                    setSelectedNodeIds(new Set());
+                    setActiveCanvasId(replacementCanvas.id);
+                    setCanvasPanelOpen(true);
+                    try {
+                        localStorage.setItem(STUDIO_ACTIVE_CANVAS_KEY, replacementCanvas.id);
+                    } catch (e) {}
+                    return;
+                }
+
+                setCanvasList(remaining);
+                writeCanvasIndex(remaining);
+
+                if (activeCanvasId === canvasId) {
+                    const fallbackCanvas = remaining[Math.max(0, targetIndex - 1)] || remaining[0];
+                    loadCanvasById(fallbackCanvas.id, { closePanel: false });
+                    setCanvasPanelOpen(true);
+                }
+            }, [activeCanvasId, canvasList, loadCanvasById, writeCanvasData, writeCanvasIndex]);
+
+            const handleStartRenameCanvas = useCallback((canvas) => {
+                setEditingCanvasId(canvas.id);
+                setEditingCanvasName(canvas.name || '');
+            }, []);
+
+            const handleCommitRenameCanvas = useCallback((canvasId) => {
+                const targetCanvas = canvasList.find((item) => item.id === canvasId);
+                if (!targetCanvas) {
+                    setEditingCanvasId(null);
+                    setEditingCanvasName('');
+                    return;
+                }
+
+                const nextName = editingCanvasName.trim() || targetCanvas.name || '未命名画布';
+                const nextList = canvasList.map((item) =>
+                    item.id === canvasId ? { ...item, name: nextName, updatedAt: Date.now() } : item
+                );
+
+                setCanvasList(nextList);
+                writeCanvasIndex(nextList);
+                setEditingCanvasId(null);
+                setEditingCanvasName('');
+            }, [canvasList, editingCanvasName, writeCanvasIndex]);
+
             const [progressState, setProgressState] = useState({
                 visible: false,
                 progress: 0,
@@ -2122,6 +2472,7 @@ You must design a visual composition that tells the story through **8 distinct p
             const selectedNodeIdRef = useRef(selectedNodeId);
             const selectedNodeIdsRef = useRef(selectedNodeIds); // 存储多选节点ID的ref
             const connectionsRef = useRef(connections);
+            const projectNameRef = useRef(projectName);
             const frameSelectionRef = useRef({});
             const copiedNodesRef = useRef(null); // 存储复制的节点数据
             const isPanningRef = useRef(false); // 使用ref跟踪画布拖动状态，避免状态丢失
@@ -2812,8 +3163,9 @@ You must design a visual composition that tells the story through **8 distinct p
                 selectedNodeIdRef.current = selectedNodeId;
                 selectedNodeIdsRef.current = selectedNodeIds; // 同步更新多选节点ref
                 connectionsRef.current = connections;
+                projectNameRef.current = projectName;
                 isSelectingRef.current = isSelecting; // 同步更新框选状态ref
-            }, [nodes, selectedNodeId, selectedNodeIds, connections, isSelecting]);
+            }, [nodes, selectedNodeId, selectedNodeIds, connections, projectName, isSelecting]);
 
             // 使用 useMemo 创建 nodes Map，优化节点查找性能（O(1) 查找）
             const nodesMap = useMemo(() => {
@@ -18879,11 +19231,34 @@ You must design a visual composition that tells the story through **8 distinct p
                             >
                                 <Layout size={18} />
                             </button>
+                            <button
+                                onClick={() => {
+                                    setCanvasPanelOpen(prev => !prev);
+                                    setHistoryOpen(false);
+                                    setCharactersOpen(false);
+                                    setActiveTool('canvases');
+                                }}
+                                className={`p-2.5 rounded-lg transition-all ${
+                                    canvasPanelOpen
+                                        ? theme === 'dark'
+                                            ? 'bg-zinc-800 text-white'
+                                            : 'bg-zinc-200 text-zinc-900'
+                                        : theme === 'dark'
+                                            ? 'text-zinc-500 hover:text-zinc-300'
+                                            : 'text-zinc-500 hover:text-zinc-800'
+                                }`}
+                                title="画布切换"
+                            >
+                                <Layers size={18} />
+                            </button>
                             {[ { id: 'select', icon: MousePointer2 }, { id: 'history', icon: History }, { id: 'characters', icon: Users } ].map((tool) => (
                                 <button
                                     key={tool.id}
                                     onClick={() => { 
                                         setActiveTool(tool.id); 
+                                        if (tool.id !== 'history') setHistoryOpen(false);
+                                        if (tool.id !== 'characters') setCharactersOpen(false);
+                                        setCanvasPanelOpen(false);
                                         if (tool.id === 'history') setHistoryOpen(!historyOpen);
                                         if (tool.id === 'characters') setCharactersOpen(!charactersOpen);
                                     }}
@@ -18949,6 +19324,146 @@ You must design a visual composition that tells the story through **8 distinct p
                                 <Download size={18} />
                             </button>
                         </div>
+
+                        {canvasPanelOpen && (
+                            <div
+                                className={`w-72 z-30 flex flex-col animate-in slide-in-from-left border-r transition-colors duration-300 ${
+                                    theme === 'dark' ? 'bg-[#121214] border-zinc-800' : 'bg-zinc-50 border-zinc-200'
+                                }`}
+                            >
+                                <div
+                                    className={`p-3 border-b flex justify-between items-center ${
+                                        theme === 'dark' ? 'border-zinc-800' : 'border-zinc-200'
+                                    }`}
+                                >
+                                    <div>
+                                        <h3
+                                            className={`font-bold text-xs ${
+                                                theme === 'dark' ? 'text-zinc-300' : 'text-zinc-700'
+                                            }`}
+                                        >
+                                            画布
+                                        </h3>
+                                        <div className={`mt-1 text-[10px] ${
+                                            theme === 'dark' ? 'text-zinc-500' : 'text-zinc-500'
+                                        }`}>
+                                            切换、新建、删除都会自动保存当前画布
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            onClick={handleCreateCanvas}
+                                            className={`p-1.5 rounded transition-colors ${
+                                                theme === 'dark'
+                                                    ? 'text-zinc-300 hover:bg-zinc-800'
+                                                    : 'text-zinc-700 hover:bg-zinc-200'
+                                            }`}
+                                            title="新建画布"
+                                        >
+                                            <Plus size={14} />
+                                        </button>
+                                        <button onClick={() => setCanvasPanelOpen(false)}>
+                                            <X
+                                                size={12}
+                                                className={theme === 'dark' ? 'text-zinc-500' : 'text-zinc-400'}
+                                            />
+                                        </button>
+                                    </div>
+                                </div>
+                                <div className="flex-1 overflow-y-auto p-3 space-y-2">
+                                    {canvasList.map((canvas, index) => {
+                                        const isActiveCanvas = canvas.id === activeCanvasId;
+                                        return (
+                                            <div
+                                                key={canvas.id}
+                                                className={`group rounded-2xl border px-3 py-3 transition-all ${
+                                                    isActiveCanvas
+                                                        ? theme === 'dark'
+                                                            ? 'border-blue-500/40 bg-blue-500/10'
+                                                            : 'border-blue-300 bg-blue-50'
+                                                        : theme === 'dark'
+                                                            ? 'border-zinc-800 bg-zinc-900/60 hover:border-zinc-700'
+                                                            : 'border-zinc-200 bg-white hover:border-zinc-300'
+                                                }`}
+                                            >
+                                                <div className="flex items-start justify-between gap-2">
+                                                    <button
+                                                        onClick={() => handleSwitchCanvas(canvas.id)}
+                                                        className="flex-1 text-left min-w-0"
+                                                    >
+                                                        {editingCanvasId === canvas.id ? (
+                                                            <input
+                                                                autoFocus
+                                                                value={editingCanvasName}
+                                                                onChange={(e) => setEditingCanvasName(e.target.value)}
+                                                                onBlur={() => handleCommitRenameCanvas(canvas.id)}
+                                                                onKeyDown={(e) => {
+                                                                    if (e.key === 'Enter') handleCommitRenameCanvas(canvas.id);
+                                                                    if (e.key === 'Escape') {
+                                                                        setEditingCanvasId(null);
+                                                                        setEditingCanvasName('');
+                                                                    }
+                                                                }}
+                                                                onClick={(e) => e.stopPropagation()}
+                                                                className={`w-full rounded-lg border px-2 py-1 text-sm outline-none ${
+                                                                    theme === 'dark'
+                                                                        ? 'border-zinc-700 bg-zinc-900 text-zinc-100'
+                                                                        : 'border-zinc-300 bg-white text-zinc-800'
+                                                                }`}
+                                                            />
+                                                        ) : (
+                                                            <div className={`truncate text-sm font-medium ${
+                                                                theme === 'dark' ? 'text-zinc-100' : 'text-zinc-800'
+                                                            }`}>
+                                                                {canvas.name}
+                                                            </div>
+                                                        )}
+                                                        <div className={`mt-1 text-[10px] ${
+                                                            theme === 'dark' ? 'text-zinc-500' : 'text-zinc-500'
+                                                        }`}>
+                                                            画布 {index + 1}
+                                                        </div>
+                                                    </button>
+                                                    <div className="flex items-center gap-1">
+                                                        <button
+                                                            onClick={() => handleStartRenameCanvas(canvas)}
+                                                            className={`rounded-lg p-1.5 transition-colors ${
+                                                                theme === 'dark'
+                                                                    ? 'text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200'
+                                                                    : 'text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700'
+                                                            }`}
+                                                            title="重命名画布"
+                                                        >
+                                                            <Edit size={14} />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleDeleteCanvas(canvas.id)}
+                                                            className={`rounded-lg p-1.5 transition-colors ${
+                                                                theme === 'dark'
+                                                                    ? 'text-zinc-500 hover:bg-red-500/10 hover:text-red-300'
+                                                                    : 'text-zinc-400 hover:bg-red-50 hover:text-red-500'
+                                                            }`}
+                                                            title="删除画布"
+                                                        >
+                                                            <Trash2 size={14} />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                                {isActiveCanvas && (
+                                                    <div className={`mt-3 inline-flex rounded-full px-2 py-1 text-[10px] ${
+                                                        theme === 'dark'
+                                                            ? 'bg-white/10 text-zinc-200'
+                                                            : 'bg-zinc-100 text-zinc-700'
+                                                    }`}>
+                                                        当前画布
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
 
                             {/* History Panel */}
                         {historyOpen && (

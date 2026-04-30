@@ -36,6 +36,7 @@ export function Toolbar() {
             edges: data.edges,
             selectedNodeId: null,
           });
+          useWorkflowStore.getState().saveToStorage();
         }
       } catch {
         alert('Invalid workflow file');

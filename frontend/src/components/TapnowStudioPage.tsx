@@ -15,7 +15,7 @@ export function TapnowStudioPage({ active }: TapnowStudioPageProps) {
   const [contentReady, setContentReady] = useState(false);
   const [showSlowHint, setShowSlowHint] = useState(false);
 
-  const studioSrc = useMemo(() => '/tapnow-studio.html', []);
+  const studioSrc = useMemo(() => '/tapnow-studio.html?v=2026-04-14-2', []);
 
   useEffect(() => {
     setFrameLoaded(false);
@@ -87,7 +87,7 @@ export function TapnowStudioPage({ active }: TapnowStudioPageProps) {
         src={studioSrc}
         className="w-full h-full border-0"
         title="Tapnow Studio"
-        sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+        sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads allow-modals"
         onLoad={() => {
           setFrameLoaded(true);
         }}

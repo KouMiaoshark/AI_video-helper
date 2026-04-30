@@ -364,7 +364,7 @@ export function AssetsPage({ active }: { active: boolean }) {
                 <ImageIcon className="w-7 h-7 text-white/15" />
               </div>
               <p className="text-sm text-white/30">{activeTab === 'favorites' ? '还没有收藏的资产' : '还没有资产'}</p>
-              <p className="text-xs text-white/15 mt-1">{activeTab === 'favorites' ? '点击 ⭐ 收藏喜欢的资产' : '在海螺页面生成的图片会自动保存到这里'}</p>
+              <p className="text-xs text-white/15 mt-1">{activeTab === 'favorites' ? '点击 ⭐ 收藏喜欢的资产' : '在网页生图生成的图片会自动保存到这里'}</p>
             </div>
           ) : (
             <div className="space-y-6">

@@ -4,3 +4,24 @@ __pycache__/
 .venv/
 frontend/node_modules/
 frontend/dist/
+
+# Local/editor files
+.idea/
+.vscode/
+*.local
+.env
+.env.*
+
+# Generated/runtime assets and images
+backend/uploads/
+backend/所有图片资产/
+frontend/dist/
+frontend/node_modules/
+*.jpg
+*.jpeg
+*.png
+*.webp
+*.gif
+
+# Local provider overrides
+backend/config/providers.local.json

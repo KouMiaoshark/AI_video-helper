@@ -13,9 +13,15 @@ import {
   SelectionMode,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { Search } from 'lucide-react';
+import { Layers3, Plus, Search, Trash2 } from 'lucide-react';
 
-import { useWorkflowStore, nodeDefaults, type NodeDataType, WORKFLOW_TEMPLATES } from '../store/workflow';
+import {
+  useWorkflowStore,
+  nodeDefaults,
+  type NodeDataType,
+  WORKFLOW_TEMPLATES,
+  type WorkflowCanvasMeta,
+} from '../store/workflow';
 import { CustomNode } from './CustomNode';
 import { NodePanel } from './NodePanel';
 import { ContextMenu } from './ContextMenu';
@@ -100,6 +106,80 @@ function CommandPalette({
   );
 }
 
+function CanvasSwitcher({
+  canvases,
+  activeCanvasId,
+  onCreate,
+  onSwitch,
+  onDelete,
+}: {
+  canvases: WorkflowCanvasMeta[];
+  activeCanvasId: string | null;
+  onCreate: () => void;
+  onSwitch: (id: string) => void;
+  onDelete: (id: string) => void;
+}) {
+  return (
+    <aside className="flex w-[220px] shrink-0 flex-col border-r border-white/[0.06] bg-[#10101a]/92">
+      <div className="border-b border-white/[0.06] px-3 py-3">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-white/45">
+              <Layers3 className="h-3.5 w-3.5" />
+              画布
+            </div>
+            <p className="mt-1 text-[11px] text-white/22">切换、新建、删除都会自动保存当前内容</p>
+          </div>
+          <button
+            onClick={onCreate}
+            className="rounded-xl border border-white/[0.08] bg-white/[0.04] p-2 text-white/60 transition hover:bg-white/[0.08] hover:text-white/85"
+            title="新建画布"
+          >
+            <Plus className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+
+      <div className="flex-1 space-y-2 overflow-y-auto p-2.5">
+        {canvases.map((canvas, index) => {
+          const isActive = canvas.id === activeCanvasId;
+          return (
+            <div
+              key={canvas.id}
+              className={`group w-full rounded-2xl border px-3 py-3 text-left transition ${
+                isActive
+                  ? 'border-purple-500/40 bg-purple-500/12 shadow-[0_12px_30px_rgba(124,92,252,0.12)]'
+                  : 'border-white/[0.06] bg-white/[0.03] hover:border-white/[0.1] hover:bg-white/[0.05]'
+              }`}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <button onClick={() => onSwitch(canvas.id)} className="min-w-0 flex-1 text-left">
+                  <div className={`truncate text-[13px] font-medium ${isActive ? 'text-white' : 'text-white/72'}`}>
+                    {canvas.name}
+                  </div>
+                  <div className="mt-1 text-[10px] text-white/28">画布 {index + 1}</div>
+                </button>
+                <button
+                  onClick={() => onDelete(canvas.id)}
+                  className="rounded-lg p-1.5 text-white/22 opacity-0 transition hover:bg-red-500/10 hover:text-red-300 group-hover:opacity-100"
+                  title="删除画布"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              {isActive ? (
+                <div className="mt-3 inline-flex rounded-full bg-white/10 px-2 py-1 text-[10px] text-white/70">
+                  当前画布
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+    </aside>
+  );
+}
+
 export default function Canvas({ active: _active }: { active: boolean }) {
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const flowRef = useRef<any>(null);
@@ -121,14 +201,19 @@ export default function Canvas({ active: _active }: { active: boolean }) {
     setContextMenu,
     selectedNodeId,
     duplicateNode,
-    loadFromStorage,
+    initializeCanvases,
     loadTemplate,
+    canvasList,
+    activeCanvasId,
+    createCanvas,
+    switchCanvas,
+    deleteCanvas,
   } = useWorkflowStore();
 
   // ── 启动时恢复上次工作流 ──
   useEffect(() => {
-    loadFromStorage();
-  }, [loadFromStorage]);
+    initializeCanvases();
+  }, [initializeCanvases]);
 
   const onDragOver = useCallback((event: React.DragEvent) => {
     event.preventDefault();
@@ -330,6 +415,13 @@ export default function Canvas({ active: _active }: { active: boolean }) {
     <div className="h-screen flex-1 flex flex-col">
       <Toolbar />
       <div className="flex-1 flex overflow-hidden">
+        <CanvasSwitcher
+          canvases={canvasList}
+          activeCanvasId={activeCanvasId}
+          onCreate={createCanvas}
+          onSwitch={switchCanvas}
+          onDelete={deleteCanvas}
+        />
         <NodePanel />
         <div ref={reactFlowWrapper} className="flex-1" onMouseDown={handleMouseDown}>
           <ReactFlow
